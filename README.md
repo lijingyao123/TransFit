@@ -1,4 +1,4 @@
-# Transfit V0.4
+# Transfit
 
 Transfit 是一个用于超新星光变曲线生成与拟合的 Python 工具包，支持热光变曲线与多波段光变曲线的模拟与参数拟合（MCMC）。本 README 依据 `examples/Tutorial.ipynb` 整理。
 
@@ -232,3 +232,26 @@ tf.plot.fit_bol(res_bol_loaded, data=data_bol_tf)
 ## 示例与教程
 - Notebook: `examples/Tutorial.ipynb`
 - 示例数据: `examples/data/`
+
+## 引用
+如果你在研究中使用了本软件，请引用以下论文：
+```bibtex
+@ARTICLE{2025ApJ...992...20L,
+       author = {{Liu}, Liang-Duan and {Zhang}, Yu-Hao and {Yu}, Yun-Wei and {Du}, Ze-Xin and {Li}, Jing-Yao and {Wu}, Guang-Lei and {Dai}, Zi-Gao},
+        title = "{TransFit: An Efficient Framework for Transient Light-curve Fitting with Time-dependent Radiative Diffusion}",
+      journal = {\\apj},
+     keywords = {Supernovae, Radiative transfer, Core-collapse supernovae, Time domain astronomy, 1668, 1335, 304, 2109, High Energy Astrophysical Phenomena, Instrumentation and Methods for Astrophysics},
+         year = 2025,
+        month = oct,
+       volume = {992},
+       number = {1},
+          eid = {20},
+        pages = {20},
+          doi = {10.3847/1538-4357/adfed6},
+archivePrefix = {arXiv},
+       eprint = {2505.13825},
+ primaryClass = {astro-ph.HE},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2025ApJ...992...20L},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+```
