@@ -166,6 +166,47 @@ def _get_engine(model: str):
     raise ValueError(f"Unknown model='{model}'")
 
 
+def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
+    """
+    Allow omitting T_floor in forward-model calls by appending 0.0.
+    This keeps backward compatibility with shorter theta in examples.
+    """
+    m = str(model).lower().strip()
+    theta_t = tuple(theta)
+
+    if m in ["ni", "nickel"]:
+        expected = 7
+        if len(theta_t) == expected - 1:
+            if not allow_missing_tfloor:
+                raise ValueError(f"theta for model='{model}' must have length {expected}")
+            return (*theta_t, 1000.0)
+        if len(theta_t) != expected:
+            raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
+        return theta_t
+
+    if m in ["scni", "sc_ni", "sc-nickel", "shockcooling+ni"]:
+        expected = 9
+        if len(theta_t) == expected - 1:
+            if not allow_missing_tfloor:
+                raise ValueError(f"theta for model='{model}' must have length {expected}")
+            return (*theta_t, 1000.0)
+        if len(theta_t) != expected:
+            raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
+        return theta_t
+
+    if m in ["magnetar", "mag", "mg"]:
+        expected = 9
+        if len(theta_t) == expected - 1:
+            if not allow_missing_tfloor:
+                raise ValueError(f"theta for model='{model}' must have length {expected}")
+            return (*theta_t, 1000.0)
+        if len(theta_t) != expected:
+            raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
+        return theta_t
+
+    return theta_t
+
+
 def _solve_state(engine, theta, *, Nx: int, Ny: int, t_max_days: float):
     return engine.calculate_light_curve(theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
@@ -189,6 +230,7 @@ def lightcurve_bol(
     t_max_days: float = 150.0,
 ) -> BolometricLC:
     engine = _get_engine(model)
+    theta = _normalize_theta(model, theta, allow_missing_tfloor=True)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
     z = ctx.distance.get_z()
@@ -212,6 +254,7 @@ def predict_bol(
     t_max_days: float = 150.0,
 ) -> np.ndarray:
     engine = _get_engine(model)
+    theta = _normalize_theta(model, theta, allow_missing_tfloor=True)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
     z = ctx.distance.get_z()
@@ -249,6 +292,7 @@ def lightcurve_multiband(
     _require_bands_in_filters(bands, filters)
 
     engine = _get_engine(model)
+    theta = _normalize_theta(model, theta, allow_missing_tfloor=False)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
     z = ctx.distance.get_z()
@@ -293,6 +337,7 @@ def predict_multiband(
     nu_obs = np.array([filters[b] for b in uniq], float)
 
     engine = _get_engine(model)
+    theta = _normalize_theta(model, theta, allow_missing_tfloor=False)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
     z = ctx.distance.get_z()
@@ -341,7 +386,8 @@ def _split_sampling(
         hi = float(hi)
         if n in fixed:
             v = float(fixed[n])
-            if not (lo < v < hi):
+            # allow boundary values for fixed params
+            if not (lo <= v <= hi):
                 raise ValueError(f"fixed['{n}']={v} out of bounds ({lo}, {hi})")
             continue
         names_samp.append(n)
@@ -517,6 +563,16 @@ def fit_bol(
         raise ValueError("data.y and data.yerr must be finite and yerr > 0.")
 
     names_all, bounds_all = build_bounds(model, priors=priors, include_t_shift=include_t_shift)
+    # 热光变拟合：T_floor 不作为参数（不参与先验/拟合）
+    if "T_floor" in names_all:
+        i_tf = names_all.index("T_floor")
+        names_all = [n for n in names_all if n != "T_floor"]
+        bounds_all = np.asarray(bounds_all, float)
+        bounds_all = np.delete(bounds_all, i_tf, axis=0)
+
+    fixed = dict(fixed or {})
+    fixed.pop("T_floor", None)
+
     names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
     prior = UniformBoundsPrior(bounds=bounds_samp, param_names=names_samp)
 

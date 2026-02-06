@@ -241,8 +241,10 @@ class NickelModel:
         # 名义外半径
         R_nom = R_max_in * fR_vals[1:]
 
-        Teff_try = (L_out / (4.0 * pi * R_nom * R_nom * SIGMA_SB))**0.25
-        R_floor = np.sqrt(L_out / (4.0 * pi * SIGMA_SB * (T_floor**4)))
+        # guard against negative luminosity (numerical noise) to avoid invalid warnings
+        L_pos = np.where(L_out > 0.0, L_out, 0.0)
+        Teff_try = (L_pos / (4.0 * pi * R_nom * R_nom * SIGMA_SB))**0.25
+        R_floor = np.sqrt(L_pos / (4.0 * pi * SIGMA_SB * (T_floor**4)))
 
         T_eff_values = np.where(Teff_try > T_floor, Teff_try, T_floor)
         R_outer_values = np.where(Teff_try > T_floor, R_nom, R_floor)
