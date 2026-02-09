@@ -151,15 +151,29 @@ def _get_engine(model: str):
         return eng
 
     if m in ["scni", "sc_ni", "sc-nickel", "shockcooling+ni"]:
-        from .model.SC_Nickel import SCNiModel
+        from .model.ScNickel import SCNiModel
         eng = SCNiModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
-    # ✅ Magnetar
+    # ✅ SC Magnetar (keeps E_Th_in and R_max_in as model parameters)
+    if m in ["scmagnetar", "sc_magnetar", "sc-magnetar"]:
+        from .model.ScMagnetar import SCMagnetarModel
+        eng = SCMagnetarModel()
+        _ENGINE_CACHE[m] = eng
+        return eng
+
+    # ✅ Pure Magnetar (E_Th_in=0, R_max_in=1 fixed)
     if m in ["magnetar", "mag", "mg"]:
         from .model.Magnetar import MagnetarModel
         eng = MagnetarModel()
+        _ENGINE_CACHE[m] = eng
+        return eng
+
+    # ✅ Magnetar + Ni
+    if m in ["magni", "mag_ni", "mag-ni", "mag+ni", "magnetar+ni", "magnetar_ni", "magnetar-ni"]:
+        from .model.MagNi import MagNiModel
+        eng = MagNiModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
@@ -194,8 +208,28 @@ def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
             raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
         return theta_t
 
-    if m in ["magnetar", "mag", "mg"]:
+    if m in ["scmagnetar", "sc_magnetar", "sc-magnetar"]:
         expected = 9
+        if len(theta_t) == expected - 1:
+            if not allow_missing_tfloor:
+                raise ValueError(f"theta for model='{model}' must have length {expected}")
+            return (*theta_t, 1000.0)
+        if len(theta_t) != expected:
+            raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
+        return theta_t
+
+    if m in ["magnetar", "mag", "mg"]:
+        expected = 7
+        if len(theta_t) == expected - 1:
+            if not allow_missing_tfloor:
+                raise ValueError(f"theta for model='{model}' must have length {expected}")
+            return (*theta_t, 1000.0)
+        if len(theta_t) != expected:
+            raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
+        return theta_t
+
+    if m in ["magni", "mag_ni", "mag-ni", "mag+ni", "magnetar+ni", "magnetar_ni", "magnetar-ni"]:
+        expected = 8
         if len(theta_t) == expected - 1:
             if not allow_missing_tfloor:
                 raise ValueError(f"theta for model='{model}' must have length {expected}")

@@ -1,4 +1,4 @@
-# transfit/model/Magnetar.py
+# transfit/model/MagNi.py
 # -*- coding: utf-8 -*-
 
 import numpy as np
@@ -10,6 +10,7 @@ from transfit.constants import (
     PI, C_LIGHT, DAY,
     M_SUN, R_SUN,
     SIGMA_SB, H_PLANCK, K_BOLTZ,
+    EPSILON_NI, EPSILON_CO, TAU_NI, TAU_CO,
 )
 
 
@@ -92,12 +93,12 @@ def _fast_time_loop_numba(
     return L_bol_out
 
 
-class MagnetarModel:
+class MagNiModel:
     """
-    Pure magnetar model.
+    Magnetar + Nickel model.
 
     theta order:
-    (M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor)
+    (M_ej, v_ej, P_ms, B14, M_Ni, kappa0, kappa_gamma, T_floor)
 
     Internal fixed values:
     - E_Th_in = 0
@@ -106,19 +107,22 @@ class MagnetarModel:
 
     def __init__(self):
         print("Initializing and JIT-compiling the model...")
-        dummy_theta = (10.0, 1.0, 3.0, 1.0, 0.2, 0.03, 4000.0)
+        dummy_theta = (10.0, 1.0, 3.0, 1.0, 0.1, 0.2, 0.03, 4000.0)
         self.calculate_light_curve(dummy_theta, Nx=10, Ny=20)
         print("Model is ready for fast execution.")
 
     def calculate_light_curve(self, theta, Nx=100, Ny=1000, t_max_days=150.0):
         pi, c, day = PI, C_LIGHT, DAY
+        eNi, eCo = EPSILON_NI, EPSILON_CO
+        tau_Ni, tau_Co = TAU_NI, TAU_CO
 
-        (M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor) = theta
+        (M_ej, v_ej, P_ms, B14, M_Ni, kappa0, kappa_gamma, T_floor) = theta
         E_Th_in = 0.0
         R_max_in = 1.0
 
         M_ej = float(M_ej) * M_SUN
         E_Th_in = float(E_Th_in) * 1.0e49
+        M_Ni = max(float(M_Ni), 0.0) * M_SUN
         R_max_in = float(R_max_in) * R_SUN
         x_s = 0.05
         kappa0 = float(kappa0)
@@ -181,7 +185,13 @@ class MagnetarModel:
         dep = np.zeros_like(t_phys)
         mask = t_phys > 0.0
         dep[mask] = 1.0 - np.exp(-(t_gamma / t_phys[mask])**2)
-        heat = dep / (1.0 + t_phys / t_p)**2
+
+        # Two power sources are added in the same PDE source term.
+        heat_mag = dep / (1.0 + t_phys / t_p)**2
+        eCo_ratio = eCo / (eNi - eCo)
+        heat_ni = np.exp(-t_phys / tau_Ni) + eCo_ratio * np.exp(-t_phys / tau_Co) * dep
+        ni_scale = (M_Ni / M_ej) * (eNi - eCo) / eps0
+        heat = heat_mag + ni_scale * heat_ni
 
         xi_vals = np.zeros_like(x_vals)
         if x_heat > x_min:
