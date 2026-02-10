@@ -1,4 +1,4 @@
-# transfit/model/Magnetar.py
+# transfit/model/magnetar.py
 # -*- coding: utf-8 -*-
 
 import numpy as np

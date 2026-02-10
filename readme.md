@@ -1,12 +1,12 @@
 # Transfit
 
-Transfit is a Python package for supernova light-curve generation and fitting. It supports both bolometric and multi-band light-curve simulation and MCMC parameter inference. This README is adapted from `examples/Tutorial.ipynb`.
+Transfit is a Python package for supernova light-curve generation and fitting. It supports both bolometric and multi-band light-curve simulation and MCMC parameter inference. This README is adapted from `examples/tutorial.ipynb`.
 
 **Directory Layout**
 - `transfit/`: core source code
 - `examples/`: examples and tutorials
-- `examples/data/`: example data (`SN1993j_lbol.txt`, `SN2007gr.csv`)
-- `MCMC_out/`: example fitting outputs
+- `examples/data/`: example data (`sn1993j_lbol.txt`, `sn2007gr.csv`)
+- `mcmc_out/`: example fitting outputs
 
 **Environment and Dependencies**
 - Python 3.x
@@ -87,7 +87,7 @@ plt.show()
 
 ```python
 # Example data
-data_bol = np.loadtxt("examples/data/SN1993j_lbol.txt")
+data_bol = np.loadtxt("examples/data/sn1993j_lbol.txt")
 
 t = data_bol[:, 0]
 t = t - t.min()
@@ -133,7 +133,7 @@ ctx = tf.Context(
 ```python
 import pandas as pd
 
-csv_path = "examples/data/SN2007gr.csv"
+csv_path = "examples/data/sn2007gr.csv"
 df = pd.read_csv(csv_path)
 
 # Use JD as the time axis
@@ -208,10 +208,10 @@ ctx = tf.Context(distance=tf.Distance(z=0.001728), filters=filters, y_kind="mag"
 
 ```python
 # Save
-# path = tf.save(res_bol, path="MCMC_out/fit_scni_test.npz")
+# path = tf.save(res_bol, path="mcmc_out/fit_scni_test.npz")
 
 # Load
-res_bol_loaded = tf.load("MCMC_out/fit_scni_test.npz")
+res_bol_loaded = tf.load("mcmc_out/fit_scni_test.npz")
 
 # Corner plot
 tf.plot.corner(res_bol_loaded)
@@ -230,7 +230,7 @@ tf.plot.fit_bol(res_bol_loaded, data=data_bol_tf)
 - All paths in the examples are relative to the repository root.
 
 ## Examples and Tutorial
-- Notebook: `examples/Tutorial.ipynb`
+- Notebook: `examples/tutorial.ipynb`
 - Example data: `examples/data/`
 
 ## Citation

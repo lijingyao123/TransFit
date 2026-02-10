@@ -20,7 +20,7 @@ from ..samplers import FitResult
 
 def default_outpath(model: str, ext: str = ".npz") -> str:
     ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    outdir = Path.cwd() / "MCMC_out"
+    outdir = Path.cwd() / "mcmc_out"
     outdir.mkdir(parents=True, exist_ok=True)
     return str(outdir / f"fit_{str(model).strip()}_{ts}{ext}")
 
@@ -54,7 +54,7 @@ def save(res: FitResult, path: Union[str, Path, None] = None) -> str:
     """
     独立保存：不会改 res，也不会往 res.meta 里塞东西。
 
-    path=None => 默认 ./MCMC_out/fit_<model>_<time>.npz
+    path=None => 默认 ./mcmc_out/fit_<model>_<time>.npz
     返回保存路径字符串。
     """
     if path is None:

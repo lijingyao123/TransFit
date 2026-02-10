@@ -23,7 +23,7 @@ def build_bounds(
 
     # ✅ 新增：SCNi
     elif m in ["scni", "sc_ni", "sc-nickel", "shockcooling+ni"]:
-        from .scni import default_names_and_bounds
+        from .sc_ni import default_names_and_bounds
         names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
     # ✅ 新增：SC Magnetar
     elif m in ["scmagnetar", "sc_magnetar", "sc-magnetar"]:

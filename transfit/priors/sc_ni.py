@@ -1,4 +1,4 @@
-# transfit/priors/scni.py
+# transfit/priors/sc_ni.py
 from __future__ import annotations
 import numpy as np
 

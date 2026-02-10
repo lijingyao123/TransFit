@@ -145,34 +145,34 @@ def _get_engine(model: str):
         return _ENGINE_CACHE[m]
 
     if m in ["ni", "nickel"]:
-        from .model.Nickel import NickelModel
+        from .model.nickel import NickelModel
         eng = NickelModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
     if m in ["scni", "sc_ni", "sc-nickel", "shockcooling+ni"]:
-        from .model.ScNickel import SCNiModel
+        from .model.sc_ni import SCNiModel
         eng = SCNiModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
     # ✅ SC Magnetar (keeps E_Th_in and R_max_in as model parameters)
     if m in ["scmagnetar", "sc_magnetar", "sc-magnetar"]:
-        from .model.ScMagnetar import SCMagnetarModel
+        from .model.sc_magnetar import SCMagnetarModel
         eng = SCMagnetarModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
     # ✅ Pure Magnetar (E_Th_in=0, R_max_in=1 fixed)
     if m in ["magnetar", "mag", "mg"]:
-        from .model.Magnetar import MagnetarModel
+        from .model.magnetar import MagnetarModel
         eng = MagnetarModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
     # ✅ Magnetar + Ni
     if m in ["magni", "mag_ni", "mag-ni", "mag+ni", "magnetar+ni", "magnetar_ni", "magnetar-ni"]:
-        from .model.MagNi import MagNiModel
+        from .model.magnetar_ni import MagNiModel
         eng = MagNiModel()
         _ENGINE_CACHE[m] = eng
         return eng

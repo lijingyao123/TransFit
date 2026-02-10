@@ -43,4 +43,3 @@ def default_names_and_bounds(include_t_shift: bool = True):
         names.append(T_SHIFT_NAME)
         bounds = np.vstack([bounds, np.array([T_SHIFT_BOUNDS[0], T_SHIFT_BOUNDS[1]], float)])
     return names, bounds
-
