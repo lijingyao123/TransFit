@@ -14,11 +14,8 @@ from transfit.constants import (
 
 
 @numba.njit(fastmath=True, cache=True)
-def thomas_algorithm(a, b, c_up, d):
+def thomas_algorithm(a, b, c_up, d, c_prime, d_prime, x_out):
     n = len(d)
-    c_prime = np.zeros(n)
-    d_prime = np.zeros(n)
-    x = np.zeros(n)
 
     c_prime[0] = c_up[0] / b[0]
     d_prime[0] = d[0] / b[0]
@@ -27,11 +24,9 @@ def thomas_algorithm(a, b, c_up, d):
         c_prime[i] = c_up[i] / denom
         d_prime[i] = (d[i] - a[i] * d_prime[i - 1]) / denom
 
-    x[n - 1] = d_prime[n - 1]
+    x_out[n - 1] = d_prime[n - 1]
     for i in range(n - 2, -1, -1):
-        x[i] = d_prime[i] - c_prime[i] * x[i + 1]
-
-    return x
+        x_out[i] = d_prime[i] - c_prime[i] * x_out[i + 1]
 
 
 @numba.njit(fastmath=True, cache=True)
@@ -49,6 +44,8 @@ def _fast_time_loop_numba(
     b_diag = np.zeros(Nx + 1)
     c_up = np.zeros(Nx + 1)
     rhs = np.zeros(Nx + 1)
+    c_prime = np.zeros(Nx + 1)
+    d_prime = np.zeros(Nx + 1)
 
     i_mid = slice(1, Nx)
     im1 = slice(0, Nx - 1)
@@ -85,7 +82,7 @@ def _fast_time_loop_numba(
         rhs[0] = 0.0
         rhs[Nx] = 0.0
 
-        e_next = thomas_algorithm(a, b_diag, c_up, rhs)
+        thomas_algorithm(a, b_diag, c_up, rhs, c_prime, d_prime, e_next)
         L_bol_out[n] = Lfac * (e_next[Nx - 1] - e_next[Nx])
         e_now, e_next = e_next, e_now
 
@@ -240,4 +237,3 @@ class MagnetarModel:
 
         M_ab_values = -2.5 * np.log10(F_nu) - 48.6 - 2.5 * np.log10(1.0 + z)
         return np.interp(t_obs, t_obs_grid, M_ab_values, left=M_ab_values[0], right=M_ab_values[-1])
-
