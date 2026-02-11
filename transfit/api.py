@@ -8,7 +8,7 @@ import numpy as np
 
 from .modules.interp import interp_fit
 from .modules.sed import BlackbodySED
-from .samplers import FitResult, gaussian_lnlike, run_emcee
+from .samplers import FitResult, gaussian_lnlike, run_emcee, run_zeus, run_dynesty
 from .priors import UniformBoundsPrior, build_bounds
 from transfit.constants import DAY
 
@@ -455,6 +455,109 @@ def _assemble_theta(
     return tuple(theta_model), t_shift_days
 
 
+def _run_sampler(
+    *,
+    sampler: str,
+    lnprob,
+    prior,
+    sampler_kwargs: Dict[str, Any],
+):
+    """
+    Dispatch sampler backend and return (samples, logp, meta, sampler_name).
+    """
+    key = str(sampler).lower().strip()
+    kw = dict(sampler_kwargs or {})
+
+    if key == "emcee":
+        ndim = len(prior.param_names)
+        nwalkers = int(kw.pop("nwalkers", max(32, 4 * max(ndim, 1))))
+        nsteps = int(kw.pop("nsteps", 2000))
+        burnin = int(kw.pop("burnin", nsteps // 2))
+        thin = int(kw.pop("thin", 1))
+        seed = kw.pop("seed", None)
+        init = kw.pop("init", "prior")
+        pool = kw.pop("pool", None)
+        progress = bool(kw.pop("progress", True))
+
+        samples, logp, meta = run_emcee(
+            lnprob=lnprob,
+            prior=prior,
+            nwalkers=nwalkers,
+            nsteps=nsteps,
+            burnin=burnin,
+            thin=thin,
+            seed=seed,
+            init=init,
+            pool=pool,
+            progress=progress,
+            **kw,
+        )
+        return samples, logp, meta, "emcee"
+
+    if key == "zeus":
+        ndim = len(prior.param_names)
+        nwalkers = int(kw.pop("nwalkers", max(32, 4 * max(ndim, 1))))
+        nsteps = int(kw.pop("nsteps", 2000))
+        burnin = int(kw.pop("burnin", nsteps // 2))
+        thin = int(kw.pop("thin", 1))
+        seed = kw.pop("seed", None)
+        init = kw.pop("init", "prior")
+        pool = kw.pop("pool", None)
+        progress = bool(kw.pop("progress", True))
+
+        samples, logp, meta = run_zeus(
+            lnprob=lnprob,
+            prior=prior,
+            nwalkers=nwalkers,
+            nsteps=nsteps,
+            burnin=burnin,
+            thin=thin,
+            seed=seed,
+            init=init,
+            pool=pool,
+            progress=progress,
+            **kw,
+        )
+        return samples, logp, meta, "zeus"
+
+    if key == "dynesty":
+        nlive = int(kw.pop("nlive", 200))
+        sample = kw.pop("sample", "rwalk")
+        bound = kw.pop("bound", "multi")
+        dlogz = float(kw.pop("dlogz", 0.1))
+        maxiter = kw.pop("maxiter", None)
+        maxcall = kw.pop("maxcall", None)
+        seed = kw.pop("seed", None)
+        progress = bool(kw.pop("progress", True))
+        nsamples = kw.pop("nsamples", None)
+        add_live = bool(kw.pop("add_live", True))
+        pool = kw.pop("pool", None)
+        queue_size = kw.pop("queue_size", None)
+
+        samples, logp, meta = run_dynesty(
+            lnprob=lnprob,
+            prior=prior,
+            nlive=nlive,
+            sample=sample,
+            bound=bound,
+            dlogz=dlogz,
+            maxiter=maxiter,
+            maxcall=maxcall,
+            seed=seed,
+            progress=progress,
+            nsamples=nsamples,
+            add_live=add_live,
+            pool=pool,
+            queue_size=queue_size,
+            **kw,
+        )
+        return samples, logp, meta, "dynesty"
+
+    raise ValueError(
+        f"Unknown sampler='{sampler}'. Supported samplers: 'emcee', 'zeus', 'dynesty'."
+    )
+
+
 # -------------------------
 # Public fit API
 # -------------------------
@@ -522,30 +625,11 @@ def fit_multiband(
 
         return lp + gaussian_lnlike(y_obs, y_mod, y_err)
 
-    if sampler.lower() != "emcee":
-        raise ValueError("v0.1 only supports sampler='emcee'")
-
-    ndim = len(names_samp)
-    nwalkers = int(sampler_kwargs.get("nwalkers", max(32, 4 * max(ndim, 1))))
-    nsteps = int(sampler_kwargs.get("nsteps", 2000))
-    burnin = int(sampler_kwargs.get("burnin", nsteps // 2))
-    thin = int(sampler_kwargs.get("thin", 1))
-    seed = sampler_kwargs.get("seed", None)
-    init = sampler_kwargs.get("init", "prior")
-    pool = sampler_kwargs.get("pool", None)
-    progress = bool(sampler_kwargs.get("progress", True))
-
-    samples, logp, meta = run_emcee(
+    samples, logp, meta, sampler_used = _run_sampler(
+        sampler=sampler,
         lnprob=lnprob,
         prior=prior,
-        nwalkers=nwalkers,
-        nsteps=nsteps,
-        burnin=burnin,
-        thin=thin,
-        seed=seed,
-        init=init,
-        pool=pool,
-        progress=progress,
+        sampler_kwargs=sampler_kwargs,
     )
 
     meta.update(
@@ -563,7 +647,7 @@ def fit_multiband(
     return FitResult(
         model=model,
         ctx=ctx,
-        sampler="emcee",
+        sampler=sampler_used,
         param_names=names_samp,
         fixed=fixed,
         all_param_names=names_all,
@@ -631,30 +715,11 @@ def fit_bol(
 
         return lp + gaussian_lnlike(y_obs, y_mod, y_err)
 
-    if sampler.lower() != "emcee":
-        raise ValueError("v0.1 only supports sampler='emcee'")
-
-    ndim = len(names_samp)
-    nwalkers = int(sampler_kwargs.get("nwalkers", max(32, 4 * max(ndim, 1))))
-    nsteps = int(sampler_kwargs.get("nsteps", 2000))
-    burnin = int(sampler_kwargs.get("burnin", nsteps // 2))
-    thin = int(sampler_kwargs.get("thin", 1))
-    seed = sampler_kwargs.get("seed", None)
-    init = sampler_kwargs.get("init", "prior")
-    pool = sampler_kwargs.get("pool", None)
-    progress = bool(sampler_kwargs.get("progress", True))
-
-    samples, logp, meta = run_emcee(
+    samples, logp, meta, sampler_used = _run_sampler(
+        sampler=sampler,
         lnprob=lnprob,
         prior=prior,
-        nwalkers=nwalkers,
-        nsteps=nsteps,
-        burnin=burnin,
-        thin=thin,
-        seed=seed,
-        init=init,
-        pool=pool,
-        progress=progress,
+        sampler_kwargs=sampler_kwargs,
     )
 
     meta.update(
@@ -672,7 +737,7 @@ def fit_bol(
     return FitResult(
         model=model,
         ctx=ctx,
-        sampler="emcee",
+        sampler=sampler_used,
         param_names=names_samp,
         fixed=fixed,
         all_param_names=names_all,
