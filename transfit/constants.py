@@ -30,7 +30,7 @@ MPC: float = 1.0e6 * PC                 # cm
 # ---- time / frequency / flux density helpers
 KM: float = 1.0e5                       # cm/s
 DAY: float = 86400.0                    # s
-YR: float = 365.0 * DAY                 # s (keep your convention)
+YR: float = 365.0 * DAY                 # s (project convention)
 GHZ: float = 1.0e9                      # Hz
 UJY: float = 1.0e-29                    # erg/s/cm^2/Hz
 MJY: float = 1.0e-26                    # erg/s/cm^2/Hz
@@ -41,7 +41,7 @@ H0: float = 71.0 * KM / MPC
 OMEGA_M: float = 0.27
 OMEGA_L: float = 0.73
 
-# ---- Ni/Co heating (your model convention)
+# ---- Ni/Co heating (project model convention)
 EPSILON_NI: float = 3.9e10              # erg/s/g
 EPSILON_CO: float = 6.8e9               # erg/s/g
 TAU_NI: float = 8.8 * DAY               # s

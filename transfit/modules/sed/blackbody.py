@@ -6,7 +6,7 @@ Blackbody SED mapping for gray-radiation models.
 Given Teff(t) and Rph(t), produce:
 - L_nu(nu_rest, t)  [erg/s/Hz]
 - F_nu at observer (requires DL_cm)
-- AB magnitude at observer (optional extra -2.5 log10(1+z) term to match your convention)
+- AB magnitude at observer (optional extra -2.5 log10(1+z) term to match project convention)
 
 This module intentionally contains NO cosmology; DL_cm must be provided by caller.
 """
@@ -66,7 +66,7 @@ class BlackbodySED:
         """
         Observer-frame flux density F_nu [erg/s/cm^2/Hz], shape (Nb, Nt).
 
-        Uses your convention:
+        Uses the project convention:
           nu_rest = nu_obs * (1+z)
           Fnu = Lnu / (4*pi*DL^2)
         """

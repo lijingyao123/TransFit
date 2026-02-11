@@ -2,14 +2,14 @@
 from __future__ import annotations
 import numpy as np
 
-# Pure MagnetarModel 参数顺序：
+# Parameter order for pure MagnetarModel:
 # (M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor)
 #
-# 说明：
-# - E_Th_in 在 pure magnetar 中固定为 0
-# - R_max_in 在 pure magnetar 中固定为 1 R_sun
-# - P_ms    : 初始自转周期（ms）
-# - B14     : 磁场强度（1e14 G）
+# Notes:
+# - E_Th_in is fixed to 0 in the pure magnetar model.
+# - R_max_in is fixed to 1 R_sun in the pure magnetar model.
+# - P_ms is the initial spin period in ms.
+# - B14 is the magnetic-field strength in units of 1e14 G.
 
 MAGNETAR_PARAM_NAMES = [
     "M_ej",         # Msun
@@ -21,7 +21,7 @@ MAGNETAR_PARAM_NAMES = [
     "T_floor",      # K
 ]
 
-# 默认范围：尽量“宽松但别离谱”
+# Reasonably broad default bounds.
 MAGNETAR_DEFAULT_BOUNDS = np.array([
     [0.3,   30.0],      # M_ej (Msun)
     [0.1,    5.0],      # v_ej (1e9 cm/s)

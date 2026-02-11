@@ -1,4 +1,4 @@
-# modules/interp.py 里追加这个函数即可
+# transfit/modules/interp.py
 
 from __future__ import annotations
 import numpy as np

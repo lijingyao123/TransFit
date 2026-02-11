@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 transfit I/O:
-- save(res, path=None): 保存 MCMC 拟合结果到 npz
-- load(path): 从 npz 读取为 dict（不重建 dataclass）
-要求：包含完整 ctx 信息（distance + filters + y_kind）
+- save(res, path=None): save MCMC fit results to an NPZ file
+- load(path): load an NPZ file into a dict (without rebuilding dataclasses)
+The payload includes complete context info (distance + filters + y_kind).
 """
 
 from __future__ import annotations
@@ -27,7 +27,8 @@ def default_outpath(model: str, ext: str = ".npz") -> str:
 
 def _ctx_to_dict(ctx) -> Dict[str, Any]:
     """
-    把 ctx 转成可 JSON 的 dict，确保“完整 ctx 信息”被保存。
+    Convert ctx to a JSON-serializable dict.
+    This keeps full context metadata in saved results.
     """
     if ctx is None:
         return {}
@@ -52,10 +53,10 @@ def _ctx_to_dict(ctx) -> Dict[str, Any]:
 
 def save(res: FitResult, path: Union[str, Path, None] = None) -> str:
     """
-    独立保存：不会改 res，也不会往 res.meta 里塞东西。
+    Save fit results without mutating `res` or `res.meta`.
 
-    path=None => 默认 ./mcmc_out/fit_<model>_<time>.npz
-    返回保存路径字符串。
+    path=None => default `./mcmc_out/fit_<model>_<time>.npz`
+    Returns the saved path string.
     """
     if path is None:
         path = default_outpath(str(res.model), ext=".npz")
@@ -84,20 +85,20 @@ def save(res: FitResult, path: Union[str, Path, None] = None) -> str:
 
 def load(path: Union[str, Path]) -> Dict[str, Any]:
     """
-    独立恢复：返回 dict（不重建 FitResult/dataclass）
-    dict 里会包含：
+    Load fit data as a plain dict (without rebuilding FitResult/dataclasses).
+    The returned dict includes:
       samples, log_prob, param_names, all_param_names, fixed(dict), meta(dict), ctx(dict), model(str), sampler(str), path(str)
     """
     p = Path(path).expanduser().resolve()
     with np.load(p, allow_pickle=True) as z:
         out = {k: z[k] for k in z.files}
 
-    # JSON 字段解码
+    # Decode JSON fields.
     out["fixed"] = json.loads(str(out.get("fixed", "{}")))
     out["meta"] = json.loads(str(out.get("meta", "{}")))
     out["ctx"] = json.loads(str(out.get("ctx", "{}")))
 
-    # str 字段规整
+    # Normalize string fields.
     if "model" in out:
         out["model"] = str(out["model"])
     if "sampler" in out:

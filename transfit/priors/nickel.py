@@ -2,8 +2,9 @@
 from __future__ import annotations
 import numpy as np
 
-# NickelModel 参数顺序：
-# (M_ej, v_ej, E_Th_in, M_Ni, R_max_in, x_s, kappa0, kappa_gamma, T_floor)
+# Parameter order for NickelModel:
+# (M_ej, v_ej, M_Ni, x_s, kappa0, kappa_gamma, T_floor)
+# Fixed inside the model: E_Th_in=0, R_max_in=10 R_sun.
 
 NICKEL_PARAM_NAMES = [
     "M_ej",         # Msun
@@ -15,7 +16,7 @@ NICKEL_PARAM_NAMES = [
     "T_floor",      # K
 ]
 
-# 给一个“宽松但别离谱”的默认范围，后面你可以再收紧
+# Reasonably broad default bounds.
 NICKEL_DEFAULT_BOUNDS = np.array([
     [0.1,   10],     # M_ej
     [0.1,    3],     # v_ej

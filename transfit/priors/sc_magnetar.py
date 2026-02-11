@@ -2,7 +2,7 @@
 from __future__ import annotations
 import numpy as np
 
-# SCMagnetar 参数顺序：
+# Parameter order for SCMagnetarModel:
 # (M_ej, v_ej, E_Th_in, P_ms, B14, R_max_in, kappa0, kappa_gamma, T_floor)
 
 SC_MAGNETAR_PARAM_NAMES = [

@@ -2,12 +2,12 @@
 from __future__ import annotations
 import numpy as np
 
-# MagNi 参数顺序：
+# Parameter order for MagNiModel:
 # (M_ej, v_ej, P_ms, B14, M_Ni, kappa0, kappa_gamma, T_floor)
 #
-# 说明：
-# - E_Th_in 固定为 0
-# - R_max_in 固定为 1 R_sun
+# Notes:
+# - E_Th_in is fixed to 0.
+# - R_max_in is fixed to 1 R_sun.
 
 MAGNI_PARAM_NAMES = [
     "M_ej",         # Msun

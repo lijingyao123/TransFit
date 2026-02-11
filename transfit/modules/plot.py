@@ -10,7 +10,7 @@ Public:
 
 Accepted `res`:
   1) FitResult (from tf.fit_*)
-  2) loaded dict (from your io.load(...))
+  2) loaded dict (from io.load(...))
 
 Notes:
   - This module DOES NOT read file paths.
@@ -115,7 +115,7 @@ def _to_loaded(res: Union[Dict[str, Any], Any]) -> Dict[str, Any]:
 
     raise TypeError(
         "plot only accepts FitResult or loaded dict.\n"
-        "If you have a .npz path, load it first via your io.load(), then pass the loaded dict."
+        "If you have a .npz path, load it first via io.load(), then pass the loaded dict."
     )
 
 

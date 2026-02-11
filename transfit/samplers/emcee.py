@@ -5,7 +5,7 @@ from typing import Callable, Optional, Tuple, Dict, Any, Sequence, Union
 import numpy as np
 import emcee
 
-# ---- NEW: parallel helpers ----
+# ---- Parallel helpers ----
 import multiprocessing as mp
 
 # loky/joblib (best for Windows notebooks)
@@ -20,7 +20,7 @@ ArrayLike = Union[np.ndarray, Sequence[float]]
 
 
 def _default_moves():
-    # 默认比单纯 Stretch 更稳，尤其是参数强相关时
+    # More stable than pure Stretch, especially for correlated parameters.
     return [
         (emcee.moves.StretchMove(a=2.0), 0.6),
         (emcee.moves.DEMove(), 0.4),
@@ -28,7 +28,7 @@ def _default_moves():
 
 
 def _get_prior_scale(prior, ndim: int) -> np.ndarray:
-    """用于 jitter 的尺度：优先用 prior.bounds 的宽度，否则退化为 1。"""
+    """Scale used for jitter: prefer prior.bounds width, fallback to 1."""
     if hasattr(prior, "bounds"):
         b = np.asarray(prior.bounds, float)
         if b.shape == (ndim, 2):
@@ -50,16 +50,16 @@ def _robust_prior_init(
     top_frac: float = 0.2,
 ) -> np.ndarray:
     """
-    稳健 prior 初始化：
-    - 先从 prior 里抽大量候选点
-    - 过滤 lnprob 为 -inf/NaN 的
-    - 在可行点里挑 logp 靠前的一部分（top_frac）
-    - 从这些好点里抽 nwalkers 个，再加 jitter 打散
+    Robust prior initialization:
+    - Draw many candidate points from the prior.
+    - Keep only candidates with finite lnprob.
+    - Select a top fraction by log-probability.
+    - Sample walker centers from that subset and add jitter.
     """
     ndim = len(prior.param_names)
     scale = _get_prior_scale(prior, ndim)
 
-    # 抽候选点数量：至少 oversample*nwalkers，也至少 2000
+    # Candidate count: at least oversample*nwalkers and at least 2000.
     n_cand = int(min(max(oversample * nwalkers, 2000), max_draws))
     cand = prior.sample(n_cand, rng=rng)
 
@@ -73,7 +73,7 @@ def _robust_prior_init(
 
     ok = np.isfinite(logp)
     if np.sum(ok) < nwalkers:
-        # 可行点太少：退而求其次，用“反复重采样直到够 nwalkers”策略
+        # Too few feasible points: repeatedly resample until nwalkers are valid.
         p0 = np.empty((nwalkers, ndim), float)
         filled = 0
         tries = 0
@@ -90,27 +90,27 @@ def _robust_prior_init(
             if tries > max_draws:
                 raise RuntimeError(
                     "robust prior init failed: too few finite lnprob points in the prior volume. "
-                    "This usually means your model/lnprob is only valid in a tiny region or often returns NaN."
+                    "This usually means the model/lnprob is only valid in a tiny region or often returns NaN."
                 )
-        # 加 jitter 打散
+        # Add jitter to spread walkers.
         p0 = p0 + jitter * rng.normal(size=p0.shape) * scale
         return p0
 
-    # 在可行点里选 top_frac 的“好点”
+    # Select top_frac of feasible points by log-probability.
     idx_ok = np.where(ok)[0]
     logp_ok = logp[idx_ok]
-    # 从大到小排序
+    # Sort from high to low.
     order = np.argsort(logp_ok)[::-1]
     idx_ok_sorted = idx_ok[order]
 
     k = max(int(len(idx_ok_sorted) * top_frac), nwalkers)
     pool_idx = idx_ok_sorted[:k]
 
-    # 抽 nwalkers 个作为中心点
+    # Draw nwalkers centers.
     chosen = rng.choice(pool_idx, size=nwalkers, replace=(len(pool_idx) < nwalkers))
     p0 = cand[chosen].copy()
 
-    # jitter：避免 walkers 完全重合/陷入细线
+    # Jitter to avoid fully overlapping walkers and narrow-line degeneracy.
     p0 = p0 + jitter * rng.normal(size=p0.shape) * scale
     return p0
 
@@ -122,7 +122,7 @@ def _ensure_finite_p0(
     rng: np.random.Generator,
     max_tries: int = 200,
 ) -> np.ndarray:
-    """护栏：确保每个 walker 初值 lnprob 有限，不有限就从 prior 重采样。"""
+    """Guardrail: ensure finite lnprob for each initial walker position."""
     p0 = np.asarray(p0, float)
     nwalkers, _ = p0.shape
 
@@ -151,7 +151,7 @@ def _ensure_finite_p0(
 
 
 # -------------------------
-# NEW: Loky pool wrapper (Windows notebook friendly)
+# Loky pool wrapper (Windows notebook friendly)
 # -------------------------
 
 class LokyPool:
@@ -189,29 +189,29 @@ def run_emcee(
     init: Union[str, np.ndarray] = "prior",
     pool=None,
     progress: bool = True,
-    # 默认开启稳健 prior 初始化
+    # Use robust prior initialization by default.
     robust_init: bool = True,
     jitter: float = 1e-2,
     moves: Optional[Sequence] = None,
     backend=None,
-    # ---------- NEW: cross-platform parallel ----------
+    # ---------- Cross-platform parallel ----------
     nproc: Optional[int] = None,
     parallel_backend: str = "auto",     # "auto" | "loky" | "mp" | "none"
     mp_start_method: str = "spawn",     # safest for Win/mac/Linux
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """
-    返回:
+    Returns:
       samples: (Ns, ndim) flat
       logp:    (Ns,)
       meta:    dict
 
-    并行规则：
-      1) 若用户显式传入 pool=xxx：直接使用（不创建/不关闭）
-      2) 否则若 nproc>1：
-         - parallel_backend="auto"：优先 loky（若可用），否则 multiprocessing
-         - parallel_backend="loky"：强制 loky（推荐 Windows notebook）
-         - parallel_backend="mp"：multiprocessing.Pool（脚本更常用）
-         - parallel_backend="none"：禁用并行
+    Parallel behavior:
+      1) If `pool` is passed explicitly, use it as-is.
+      2) Otherwise, if `nproc > 1`:
+         - parallel_backend="auto": prefer loky if available, else multiprocessing
+         - parallel_backend="loky": force loky (recommended for Windows notebooks)
+         - parallel_backend="mp": use multiprocessing.Pool
+         - parallel_backend="none": disable parallel execution
     """
     rng = np.random.default_rng(seed)
     nwalkers = int(nwalkers)
@@ -221,7 +221,7 @@ def run_emcee(
 
     ndim = len(prior.param_names)
 
-    # -------- init p0 --------
+    # -------- Initialize p0 --------
     if isinstance(init, str) and init == "prior":
         if robust_init:
             p0 = _robust_prior_init(
@@ -234,7 +234,7 @@ def run_emcee(
         else:
             p0 = prior.sample(nwalkers, rng=rng)
     else:
-        # 允许用户自己传 p0: shape (nwalkers, ndim) 或 (ndim,)
+        # Allow user-provided p0 with shape (nwalkers, ndim) or (ndim,).
         p0 = np.asarray(init, float)
         if p0.shape == (ndim,):
             scale = _get_prior_scale(prior, ndim)
@@ -244,14 +244,14 @@ def run_emcee(
                 f"init must be 'prior' or array shape (nwalkers, ndim)={nwalkers, ndim} or (ndim,)"
             )
 
-    # 护栏：确保 p0 全部可计算
+    # Guardrail: ensure all walker initial points are valid.
     p0 = _ensure_finite_p0(p0, lnprob, prior, rng)
 
     # -------- moves --------
     if moves is None:
         moves = _default_moves()
 
-    # -------- NEW: create pool if needed --------
+    # -------- Create pool if needed --------
     created_pool = None
     used_backend = None
 
@@ -259,7 +259,7 @@ def run_emcee(
         b = str(parallel_backend).lower().strip()
 
         if b == "auto":
-            # Windows notebook 最稳：loky（若可用），否则退回 mp
+            # Best default for Windows notebooks: loky if available, else mp.
             b = "loky" if _HAS_LOKY else "mp"
 
         if b == "loky":
@@ -284,7 +284,7 @@ def run_emcee(
 
         # -------- run --------
         if burnin > 0:
-            # 两段式：burnin 后 reset，再跑生产链，能减少 burnin 残留
+            # Two-stage run: burn-in, reset, then production chain.
             state = sampler.run_mcmc(p0, burnin, progress=progress)
             sampler.reset()
             sampler.run_mcmc(state, nsteps, progress=progress)
@@ -321,7 +321,7 @@ def run_emcee(
         return np.asarray(chain, float), np.asarray(logp, float), meta
 
     finally:
-        # 只关闭“我们自动创建的 pool”
+        # Close only pools created inside this function.
         if created_pool is not None:
             try:
                 created_pool.close()

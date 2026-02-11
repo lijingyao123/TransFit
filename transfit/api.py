@@ -145,34 +145,34 @@ def _get_engine(model: str):
         return _ENGINE_CACHE[m]
 
     if m in ["ni", "nickel"]:
-        from .model.nickel import NickelModel
+        from .models.nickel import NickelModel
         eng = NickelModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
     if m in ["scni", "sc_ni", "sc-nickel", "shockcooling+ni"]:
-        from .model.sc_ni import SCNiModel
+        from .models.sc_ni import SCNiModel
         eng = SCNiModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
-    # ✅ SC Magnetar (keeps E_Th_in and R_max_in as model parameters)
+    # SC Magnetar (keeps E_Th_in and R_max_in as model parameters)
     if m in ["scmagnetar", "sc_magnetar", "sc-magnetar"]:
-        from .model.sc_magnetar import SCMagnetarModel
+        from .models.sc_magnetar import SCMagnetarModel
         eng = SCMagnetarModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
-    # ✅ Pure Magnetar (E_Th_in=0, R_max_in=1 fixed)
+    # Pure Magnetar (E_Th_in=0, R_max_in=1 fixed)
     if m in ["magnetar", "mag", "mg"]:
-        from .model.magnetar import MagnetarModel
+        from .models.magnetar import MagnetarModel
         eng = MagnetarModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
-    # ✅ Magnetar + Ni
+    # Magnetar + Ni
     if m in ["magni", "mag_ni", "mag-ni", "mag+ni", "magnetar+ni", "magnetar_ni", "magnetar-ni"]:
-        from .model.magnetar_ni import MagNiModel
+        from .models.magnetar_ni import MagNiModel
         eng = MagNiModel()
         _ENGINE_CACHE[m] = eng
         return eng
@@ -246,7 +246,7 @@ def _solve_state(engine, theta, *, Nx: int, Ny: int, t_max_days: float):
 
 
 def _t_grid_days_from_ts(t_s: np.ndarray, z: float) -> np.ndarray:
-    # 保持你当前工程的时间映射约定
+    # Keep the current project convention for observer-frame time mapping.
     return (np.asarray(t_s, float) * (1.0 + z)) / DAY
 
 
@@ -294,7 +294,7 @@ def predict_bol(
     z = ctx.distance.get_z()
     t_grid_days = _t_grid_days_from_ts(t_s, z=z)
 
-    # Lbol 正值量：log10 插值更稳
+    # Lbol is strictly positive; log10 interpolation is more stable.
     return interp_fit(
         t_grid_days,
         np.asarray(Lbol, float),
@@ -321,7 +321,7 @@ def lightcurve_multiband(
     if ctx.filters is None:
         raise ValueError("ctx.filters is required for multiband. For bolometric you can omit it.")
     filters = _norm_filters(ctx.filters)
-    # ✅ bands 保留大小写，只 strip
+    # Keep band case; only strip whitespace.
     bands = [_norm_band(b) for b in list(bands)]
     _require_bands_in_filters(bands, filters)
 
@@ -361,7 +361,7 @@ def predict_multiband(
     filters = _norm_filters(ctx.filters)
     t_days = np.asarray(t_days, float).reshape(-1)
 
-    # ✅ band 保留大小写，只 strip
+    # Keep band case; only strip whitespace.
     band = np.asarray([_norm_band(b) for b in np.asarray(band).reshape(-1)], dtype=object)
     _check_same_length(t_days=t_days, band=band)
 
@@ -479,7 +479,7 @@ def fit_multiband(
     y_obs = _as_1d_float(data.y, "data.y")
     y_err = _as_1d_float(data.yerr, "data.yerr")
 
-    # ✅ 保留 band 大小写，只 strip
+    # Keep band case; only strip whitespace.
     band = np.asarray([_norm_band(b) for b in np.asarray(data.band).reshape(-1)], dtype=object)
 
     _check_same_length(t_days=t_obs, band=band, y=y_obs, yerr=y_err)
@@ -597,7 +597,7 @@ def fit_bol(
         raise ValueError("data.y and data.yerr must be finite and yerr > 0.")
 
     names_all, bounds_all = build_bounds(model, priors=priors, include_t_shift=include_t_shift)
-    # 热光变拟合：T_floor 不作为参数（不参与先验/拟合）
+    # For bolometric fitting, T_floor is excluded from priors and sampling.
     if "T_floor" in names_all:
         i_tf = names_all.index("T_floor")
         names_all = [n for n in names_all if n != "T_floor"]

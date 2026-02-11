@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import numba  # 导入Numba
+import numba  # Numba JIT
 from astropy.cosmology import Planck15 as cosmo
 import astropy.units as u
 
@@ -14,7 +14,7 @@ from transfit.constants import (
 )
 
 # -----------------------------------------------------------------------------
-# 核心计算函数，使用 Numba JIT 编译
+# Core solver functions (Numba JIT)
 # -----------------------------------------------------------------------------
 
 @numba.njit(fastmath=True, cache=True)
@@ -58,14 +58,14 @@ def _fast_time_loop_numba(
     The entire time-evolution loop, JIT-compiled with Numba.
     This function contains the performance-critical part of the calculation.
     """
-    # 内存管理：仅需两个向量
+    # Memory: only two evolving state vectors are needed.
     e_now = e_initial.copy()
     e_next = np.empty_like(e_now)
 
-    # 输出数组
+    # Output array
     L_bol_out = np.zeros(Ny)
 
-    # 预分配三对角矩阵的对角线和RHS向量
+    # Pre-allocate tridiagonal diagonals and RHS.
     # Thomas algorithm inputs: a=lower, b=main, c_up=upper, d=rhs
     a = np.zeros(Nx + 1)
     b_diag = np.zeros(Nx + 1)
@@ -74,34 +74,34 @@ def _fast_time_loop_numba(
     c_prime = np.zeros(Nx + 1)  # Thomas workspace
     d_prime = np.zeros(Nx + 1)  # Thomas workspace
 
-    # 空间切片（在Numba中定义常量比传入更高效）
+    # Index slices (defining these once is faster under Numba).
     i_mid = slice(1, Nx)
     im1 = slice(0, Nx - 1)
     ip1 = slice(2, Nx + 1)
     xi_inner = xi_vals[1:-1]
 
-    # --- 主时间循环 (在编译代码中运行) ---
+    # --- Main time loop (runs inside compiled code) ---
     for n in range(Ny):
         fR_now, fR_next = fR_vals[n], fR_vals[n + 1]
 
-        # --- 组装 A 矩阵 (Ax=d) ---
-        # 内点 (i=1..Nx-1)
+        # --- Assemble A matrix (Ax=d) ---
+        # Interior points (i=1..Nx-1)
         mu_fr_next = mu_const * fR_next
         b_diag[i_mid] = 1.0 + mu_fr_next * diag_const
-        c_up[i_mid] = -mu_fr_next * up_const    # 上对角线
-        a[i_mid] = -mu_fr_next * lo_const       # 下对角线
+        c_up[i_mid] = -mu_fr_next * up_const    # upper diagonal
+        a[i_mid] = -mu_fr_next * lo_const       # lower diagonal
 
-        # 左边界: -e_0 + e_1 = 0
+        # Left boundary: -e_0 + e_1 = 0
         b_diag[0] = -1.0
         c_up[0] = 1.0
-        a[0] = 0.0  # 在Thomas算法中被忽略
+        a[0] = 0.0  # ignored in Thomas algorithm
 
-        # 右边界: (dx - f_ob)*e_N + f_ob*e_{N-1} = 0
+        # Right boundary: (dx - f_ob)*e_N + f_ob*e_{N-1} = 0
         b_diag[Nx] = dx - f_ob_vals[n + 1]
         a[Nx] = f_ob_vals[n + 1]
-        c_up[Nx] = 0.0  # 在Thomas算法中被忽略
+        c_up[Nx] = 0.0  # ignored in Thomas algorithm
 
-        # --- 组装 RHS 向量 d ---
+        # --- Assemble RHS vector d ---
         S_now_inner = xi_inner * (fR_now * heat_vals[n])
         S_next_inner = xi_inner * (fR_next * heat_vals[n + 1])
 
@@ -116,13 +116,13 @@ def _fast_time_loop_numba(
         rhs[0] = 0.0
         rhs[Nx] = 0.0
 
-        # --- 调用Numba优化的求解器 ---
+        # --- Solve with the Numba-optimized solver ---
         thomas_algorithm(a, b_diag, c_up, rhs, c_prime, d_prime, e_next)
 
-        # --- 计算光度并存储 ---
+        # --- Compute and store luminosity ---
         L_bol_out[n] = Lfac * (e_next[Nx - 1] - e_next[Nx])
 
-        # --- 准备下一步 (无内存拷贝的引用交换) ---
+        # --- Prepare next step (swap references without copying) ---
         e_now, e_next = e_next, e_now
 
     return L_bol_out
@@ -138,7 +138,7 @@ class SCMagnetarModel:
     """
 
     def __init__(self):
-        # JIT 预热：初始化时跑一次小计算触发编译，避免第一次正式调用卡顿
+        # JIT warm-up: run a small solve once at initialization.
         print("Initializing and JIT-compiling the model...")
         dummy_theta = (10.0, 1.0, 1.0, 0.1, 100.0, 0.5, 0.2, 0.03, 4000)
         self.calculate_light_curve(dummy_theta, Nx=10, Ny=20)
@@ -174,7 +174,7 @@ class SCMagnetarModel:
         t_diff = 3.0 * kappa0 * rho_in * R_min_in**2 / c
         tau_in = kappa0 * rho_in * R_min_in
 
-        # gamma leakage timescale (keep your form)
+        # Gamma leakage timescale.
         t_gamma = np.sqrt((3.0 * kappa_g * M_ej) / (4.0 * pi * v_ej * v_ej))
 
         # ------------------------------------------------------------------
@@ -197,7 +197,7 @@ class SCMagnetarModel:
         # characteristic specific power scale (erg/g/s)
         eps0 = (E_p / t_p) / M_ej
 
-        # NEW u0 uses magnetar power scale
+        # u0 uses the magnetar power scale.
         u0 = rho_in * eps0 * t_diff
 
         # L0 and e0_coeff follow the same nondimensionalization logic

@@ -21,21 +21,18 @@ def build_bounds(
         from .iib import default_names_and_bounds
         names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
 
-    # ✅ 新增：SCNi
     elif m in ["scni", "sc_ni", "sc-nickel", "shockcooling+ni"]:
         from .sc_ni import default_names_and_bounds
         names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
-    # ✅ 新增：SC Magnetar
+
     elif m in ["scmagnetar", "sc_magnetar", "sc-magnetar"]:
         from .sc_magnetar import default_names_and_bounds
         names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
 
-    # ✅ 新增：Pure Magnetar
     elif m in ["magnetar", "mag", "mg"]:
         from .magnetar import default_names_and_bounds
         names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
 
-    # ✅ 新增：Magnetar + Ni
     elif m in ["magni", "mag_ni", "mag-ni", "mag+ni", "magnetar+ni", "magnetar_ni", "magnetar-ni"]:
         from .magnetar_ni import default_names_and_bounds
         names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)

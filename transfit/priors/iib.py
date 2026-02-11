@@ -2,7 +2,7 @@
 from __future__ import annotations
 import numpy as np
 
-# 你之后把 IIb 的参数名和默认范围在这里补上
+# Placeholder for IIb parameter names and default bounds.
 IIB_PARAM_NAMES = [
     # "param1", "param2", ...
 ]

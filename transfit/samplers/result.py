@@ -12,7 +12,7 @@ class FitResult:
     Minimal, stable fit result container for v0.x.
 
     Notes:
-    - ctx 用 Any 避免循环导入（api.Context -> samplers -> api）
+    - `ctx` uses `Any` to avoid circular imports (api.Context -> samplers -> api).
     """
     model: str
     ctx: Any

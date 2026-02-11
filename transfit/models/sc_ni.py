@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import numba  # 导入Numba
+import numba  # Numba JIT
 from astropy.cosmology import Planck15 as cosmo
 import astropy.units as u
 
@@ -15,7 +15,7 @@ from transfit.constants import (
 )
 
 # -----------------------------------------------------------------------------
-# 核心计算函数，使用 Numba JIT 编译
+# Core solver functions (Numba JIT)
 # -----------------------------------------------------------------------------
 
 @numba.njit(fastmath=True, cache=True)
@@ -126,7 +126,7 @@ class SCNiModel:
     """
 
     def __init__(self):
-        # 不再在类里复制常量，统一从 transfit.constants 使用
+        # Use constants directly from transfit.constants.
         print("Initializing and JIT-compiling the model...")
         dummy_theta = (5, 1.0, 1.0, 0.2, 100.0, 0.5, 0.2, 0.03, 4000)
         self.calculate_light_curve(dummy_theta, Nx=50, Ny=200)
