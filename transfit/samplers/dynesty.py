@@ -5,14 +5,23 @@ import multiprocessing as mp
 import numpy as np
 
 
-def _build_uniform_prior_transform(bounds: np.ndarray):
+def _build_prior_transform(bounds: np.ndarray, log_flags=None):
     lo = bounds[:, 0]
     hi = bounds[:, 1]
-    span = hi - lo
+    lf = np.asarray(log_flags, bool) if log_flags is not None else np.zeros(lo.size, dtype=bool)
+    if lf.size != lo.size:
+        raise ValueError("log_flags size must match bounds ndim for dynesty.")
+
+    span_lin = hi - lo
+    span_log = np.log(hi) - np.log(lo)
 
     def prior_transform(unit_cube: np.ndarray) -> np.ndarray:
         u = np.asarray(unit_cube, float)
-        return lo + span * u
+        x = lo + span_lin * u
+        if np.any(lf):
+            x = np.asarray(x, float)
+            x[lf] = np.exp(np.log(lo[lf]) + span_log[lf] * u[lf])
+        return x
 
     return prior_transform
 
@@ -63,7 +72,14 @@ def run_dynesty(
 
     ndim = int(bounds.shape[0])
     nlive = int(nlive)
-    prior_transform = _build_uniform_prior_transform(bounds)
+    log_flags = getattr(prior, "log_flags", None)
+    if log_flags is None:
+        log_flags = np.zeros(ndim, dtype=bool)
+    else:
+        log_flags = np.asarray(log_flags, bool).reshape(-1)
+        if log_flags.size != ndim:
+            raise ValueError("prior.log_flags size does not match prior bounds ndim.")
+    prior_transform = _build_prior_transform(bounds, log_flags=log_flags)
 
     def loglike(theta: np.ndarray) -> float:
         x = np.asarray(theta, float)

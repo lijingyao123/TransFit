@@ -9,7 +9,7 @@ import numpy as np
 from .modules.interp import interp_fit
 from .modules.sed import BlackbodySED
 from .samplers import FitResult, gaussian_lnlike, run_emcee, run_zeus, run_dynesty
-from .priors import UniformBoundsPrior, build_bounds
+from .priors import MixedBoundsPrior, build_bounds
 from transfit.constants import DAY
 
 
@@ -455,6 +455,127 @@ def _assemble_theta(
     return tuple(theta_model), t_shift_days
 
 
+def _apply_log10_priors(
+    names: Sequence[str],
+    bounds: np.ndarray,
+    priors_log10: Optional[Dict[str, Tuple[float, float]]],
+):
+    """
+    Apply log10 prior bounds and return updated bounds + log-prior flags.
+
+    `priors_log10` format:
+      {"param": (log10_lo, log10_hi), ...}
+    """
+    b = np.asarray(bounds, float).copy()
+    names_l = [str(n) for n in names]
+    idx = {n: i for i, n in enumerate(names_l)}
+    log_set = set()
+
+    if not priors_log10:
+        return b, log_set
+
+    for k, vv in dict(priors_log10).items():
+        if k not in idx:
+            raise KeyError(f"Unknown log prior key '{k}'. Allowed: {names_l}")
+        if vv is None or len(vv) != 2:
+            raise ValueError(f"Invalid log10 bounds for '{k}': {vv!r}")
+
+        lo_log10 = float(vv[0])
+        hi_log10 = float(vv[1])
+        if not (lo_log10 < hi_log10):
+            raise ValueError(
+                f"Invalid log10 bounds for '{k}': ({lo_log10}, {hi_log10})"
+            )
+
+        lo = 10.0 ** lo_log10
+        hi = 10.0 ** hi_log10
+        if not (np.isfinite(lo) and np.isfinite(hi) and lo > 0.0 and hi > 0.0):
+            raise ValueError(
+                f"log10 bounds for '{k}' lead to invalid linear bounds: ({lo}, {hi})"
+            )
+
+        b[idx[k], 0] = lo
+        b[idx[k], 1] = hi
+        log_set.add(k)
+
+    return b, log_set
+
+
+def _split_prior_specs(
+    priors: Optional[Dict[str, Any]],
+):
+    """
+    Parse mixed prior specs into linear bounds and log10 bounds.
+
+    Supported `priors` formats per parameter:
+      - (lo, hi)                      -> linear uniform bounds
+      - ("log10", lo_log10, hi_log10) -> log10 bounds, log-uniform prior
+      - {"bounds": (lo, hi), "scale": "linear" | "log10"}
+    """
+    if not priors:
+        return {}, {}
+
+    pri_lin: Dict[str, Tuple[float, float]] = {}
+    pri_log10: Dict[str, Tuple[float, float]] = {}
+
+    for k, spec in dict(priors).items():
+        if isinstance(spec, dict):
+            if "bounds" not in spec:
+                raise ValueError(
+                    f"Prior spec for '{k}' must contain key 'bounds' when using dict format."
+                )
+            b = spec["bounds"]
+            if b is None or len(b) != 2:
+                raise ValueError(f"Invalid bounds for '{k}': {b!r}")
+            lo = float(b[0])
+            hi = float(b[1])
+            if not (lo < hi):
+                raise ValueError(f"Invalid bounds for '{k}': ({lo}, {hi})")
+
+            scale = str(spec.get("scale", "linear")).strip().lower()
+            if scale in ("linear", "lin"):
+                pri_lin[k] = (lo, hi)
+            elif scale in ("log10", "log"):
+                pri_log10[k] = (lo, hi)
+            else:
+                raise ValueError(
+                    f"Unknown prior scale '{scale}' for '{k}'. Use 'linear' or 'log10'."
+                )
+            continue
+
+        if isinstance(spec, (tuple, list)):
+            if len(spec) == 2 and not isinstance(spec[0], str):
+                lo = float(spec[0])
+                hi = float(spec[1])
+                if not (lo < hi):
+                    raise ValueError(f"Invalid bounds for '{k}': ({lo}, {hi})")
+                pri_lin[k] = (lo, hi)
+                continue
+
+            if len(spec) == 3 and isinstance(spec[0], str):
+                mode = str(spec[0]).strip().lower()
+                lo = float(spec[1])
+                hi = float(spec[2])
+                if not (lo < hi):
+                    raise ValueError(f"Invalid bounds for '{k}': ({lo}, {hi})")
+                if mode in ("log10", "log"):
+                    pri_log10[k] = (lo, hi)
+                elif mode in ("linear", "lin"):
+                    pri_lin[k] = (lo, hi)
+                else:
+                    raise ValueError(
+                        f"Unknown prior mode '{mode}' for '{k}'. Use 'linear' or 'log10'."
+                    )
+                continue
+
+        raise ValueError(
+            f"Invalid prior spec for '{k}': {spec!r}. "
+            "Use (lo, hi), ('log10', lo, hi), or {'bounds': (lo, hi), 'scale': 'linear|log10'}."
+        )
+
+    return pri_lin, pri_log10
+
+
 def _run_sampler(
     *,
     sampler: str,
@@ -567,7 +688,7 @@ def fit_multiband(
     data: MultiBandData,
     model: str,
     ctx: Context,
-    priors: Optional[Dict[str, Tuple[float, float]]] = None,
+    priors: Optional[Dict[str, Any]] = None,
     fixed: Optional[Dict[str, float]] = None,
     sampler: str = "emcee",
     sampler_kwargs: Optional[Dict[str, Any]] = None,
@@ -591,9 +712,12 @@ def fit_multiband(
         raise ValueError("data.y and data.yerr must be finite and yerr > 0.")
 
     # ---- bounds/prior ----
-    names_all, bounds_all = build_bounds(model, priors=priors, include_t_shift=include_t_shift)
+    priors_lin, priors_log10 = _split_prior_specs(priors)
+    names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=include_t_shift)
+    bounds_all, log_set_all = _apply_log10_priors(names_all, bounds_all, priors_log10)
     names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
-    prior = UniformBoundsPrior(bounds=bounds_samp, param_names=names_samp)
+    log_flags_samp = [n in log_set_all for n in names_samp]
+    prior = MixedBoundsPrior(bounds=bounds_samp, param_names=names_samp, log_flags=log_flags_samp)
 
     # ---- band check (case-sensitive) ----
     if ctx.filters is None:
@@ -639,6 +763,10 @@ def fit_multiband(
             names_all=names_all,
             bounds_all=np.asarray(bounds_all, float),
             bounds_samp=np.asarray(bounds_samp, float),
+            priors_input=dict(priors or {}),
+            priors_linear=dict(priors_lin or {}),
+            priors_log10=dict(priors_log10 or {}),
+            log_prior_names=sorted([n for n in names_samp if n in log_set_all]),
             include_t_shift=include_t_shift,
             model_kwargs=model_kwargs,
         )
@@ -662,7 +790,7 @@ def fit_bol(
     data: BolometricData,
     model: str,
     ctx: Context,
-    priors: Optional[Dict[str, Tuple[float, float]]] = None,
+    priors: Optional[Dict[str, Any]] = None,
     fixed: Optional[Dict[str, float]] = None,
     sampler: str = "emcee",
     sampler_kwargs: Optional[Dict[str, Any]] = None,
@@ -680,19 +808,24 @@ def fit_bol(
     if np.any(~np.isfinite(y_obs)) or np.any(~np.isfinite(y_err)) or np.any(y_err <= 0):
         raise ValueError("data.y and data.yerr must be finite and yerr > 0.")
 
-    names_all, bounds_all = build_bounds(model, priors=priors, include_t_shift=include_t_shift)
+    priors_lin, priors_log10 = _split_prior_specs(priors)
+    names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=include_t_shift)
+    bounds_all, log_set_all = _apply_log10_priors(names_all, bounds_all, priors_log10)
     # For bolometric fitting, T_floor is excluded from priors and sampling.
     if "T_floor" in names_all:
         i_tf = names_all.index("T_floor")
         names_all = [n for n in names_all if n != "T_floor"]
         bounds_all = np.asarray(bounds_all, float)
         bounds_all = np.delete(bounds_all, i_tf, axis=0)
+        if "T_floor" in log_set_all:
+            log_set_all.remove("T_floor")
 
     fixed = dict(fixed or {})
     fixed.pop("T_floor", None)
 
     names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
-    prior = UniformBoundsPrior(bounds=bounds_samp, param_names=names_samp)
+    log_flags_samp = [n in log_set_all for n in names_samp]
+    prior = MixedBoundsPrior(bounds=bounds_samp, param_names=names_samp, log_flags=log_flags_samp)
 
     def lnprob(sample_vec: np.ndarray) -> float:
         lp = prior.lnprior(sample_vec)
@@ -729,6 +862,10 @@ def fit_bol(
             names_all=names_all,
             bounds_all=np.asarray(bounds_all, float),
             bounds_samp=np.asarray(bounds_samp, float),
+            priors_input=dict(priors or {}),
+            priors_linear=dict(priors_lin or {}),
+            priors_log10=dict(priors_log10 or {}),
+            log_prior_names=sorted([n for n in names_samp if n in log_set_all]),
             include_t_shift=include_t_shift,
             model_kwargs=model_kwargs,
         )

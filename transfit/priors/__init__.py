@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict, Optional, Tuple
 import numpy as np
 
-from .common import UniformBoundsPrior, apply_user_bounds
+from .common import UniformBoundsPrior, MixedBoundsPrior, apply_user_bounds
 
 
 def build_bounds(
@@ -44,4 +44,4 @@ def build_bounds(
     return names, np.asarray(bounds, float)
 
 
-__all__ = ["UniformBoundsPrior", "build_bounds"]
+__all__ = ["UniformBoundsPrior", "MixedBoundsPrior", "build_bounds"]
