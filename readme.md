@@ -1,258 +1,214 @@
 # Transfit
 
-Transfit is a Python package for supernova light-curve generation and fitting. It supports both bolometric and multi-band light-curve simulation and MCMC parameter inference. This README is adapted from `examples/tutorial.ipynb`.
+Transfit is a lightweight framework for transient light-curve modeling and Bayesian fitting.
+It supports:
+- Bolometric light curves
+- Multi-band light curves (AB magnitude or flux density)
+- Multiple samplers (`emcee`, `zeus`, `dynesty`)
+- Linear and log-uniform priors
 
-**Directory Layout**
-- `transfit/`: core source code
-- `examples/`: examples and tutorials
-- `examples/data/`: example data (`sn1993j_lbol.txt`, `sn2007gr.csv`)
-- `mcmc_out/`: example fitting outputs
+The full walkthrough is in `examples/tutorial.ipynb`.
 
-**Environment and Dependencies**
-- Python 3.x
-- Main dependencies: `numpy`, `matplotlib`, `pandas`, `emcee`
-- Optional dependencies: `corner` (corner plots), `joblib` (parallel sampling)
+## Project Layout
+- `transfit/`: core package
+- `transfit/models/`: physical light-curve engines
+- `transfit/priors/`: default parameter names and bounds
+- `transfit/samplers/`: sampler backends and result container
+- `transfit/modules/`: plotting and I/O helpers
+- `examples/`: tutorial and tests
+- `examples/data/`: sample datasets
 
-It is recommended to run examples from the repository root so the local `transfit` package can be imported directly.
+## Environment
+Run from repository root so `import transfit` works directly.
 
-## Quick Start
+Main dependencies:
+- `numpy`
+- `matplotlib`
+- `pandas`
+- `numba`
+- `astropy`
 
-**Import dependencies**
+Optional dependencies:
+- `corner` (for corner plots)
+- `emcee`, `zeus`, `dynesty` (for fitting backends)
+
+## Core Concepts
+
+### 1. `Context`
+- `distance`: `tf.Distance(z=..., DL_cm=...)`
+- `filters`: dict of effective frequency, e.g. `{"B": 6.8e14, "V": 5.5e14}` (required for multi-band)
+- `y_kind`: `"mag"` or `"flux"`
+
+### 2. Data containers
+- `tf.BolometricData(t_days, y, yerr)`
+- `tf.MultiBandData(t_days, band, y, yerr)`
+
+All arrays must have matching lengths; `yerr` must be finite and positive.
+
+## Models and Parameter Order
+
+Accepted model keys (case-insensitive aliases are supported in API):
+
+| Model key | Physical meaning | Parameter order (`theta`) |
+|---|---|---|
+| `nickel` / `ni` | Ni-powered model | `(M_ej, v_ej, M_Ni, x_s, kappa0, kappa_gamma, T_floor)` |
+| `sc_ni` / `scni` | Shock-cooling + Ni | `(M_ej, v_ej, E_Th_in, M_Ni, R_max_in, x_s, kappa0, kappa_gamma, T_floor)` |
+| `magnetar` | Pure magnetar | `(M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor)` |
+| `sc_magnetar` | Shock-cooling + magnetar | `(M_ej, v_ej, E_Th_in, P_ms, B14, R_max_in, kappa0, kappa_gamma, T_floor)` |
+| `magnetar_ni` / `mag_ni` / `magni` | Magnetar + Ni | `(M_ej, v_ej, P_ms, B14, M_Ni, kappa0, kappa_gamma, T_floor)` |
+
+Built-in fixed assumptions:
+- `nickel`: `E_Th_in=0`, `R_max_in=10 R_sun`
+- `magnetar`: `E_Th_in=0`, `R_max_in=1 R_sun`
+- `magnetar_ni`: `E_Th_in=0`, `R_max_in=1 R_sun`
+
+## Parameter Glossary
+
+| Parameter | Meaning | Unit |
+|---|---|---|
+| `M_ej` | Ejecta mass | `M_sun` |
+| `v_ej` | Characteristic ejecta velocity | `1e9 cm s^-1` |
+| `M_Ni` | Nickel-56 mass | `M_sun` |
+| `E_Th_in` | Initial thermal energy scale | `1e49 erg` |
+| `R_max_in` | Initial outer-radius scale | `R_sun` |
+| `x_s` | Heating radius fraction | dimensionless `[0,1]` |
+| `kappa0` | Optical opacity | `cm^2 g^-1` |
+| `kappa_gamma` | Gamma-ray opacity | `cm^2 g^-1` |
+| `P_ms` | Magnetar initial spin period | `ms` |
+| `B14` | Magnetar magnetic field scale | `1e14 G` |
+| `T_floor` | Temperature floor for photosphere | `K` |
+| `t_shift_days` | Time offset between model and observed timeline | `day` |
+
+`t_shift_days` convention in fitting:
+- Likelihood is evaluated as `model(t_obs - t_shift_days)`.
+- Positive `t_shift_days` shifts the model curve to later observed times.
+
+## Fitting API
+
+### `tf.fit_bol(...)`
+Key arguments:
+- `data`: `BolometricData`
+- `model`: model key
+- `ctx`: `Context`
+- `priors`: bounds specification
+- `fixed`: fixed parameter values
+- `sampler`: `"emcee"`, `"zeus"`, or `"dynesty"`
+- `sampler_kwargs`: sampler-specific config
+- `include_t_shift`: whether to include `t_shift_days` in fit
+
+Note:
+- The PDE grid settings are managed internally in the default workflow and are not exposed as standard user-facing fit parameters.
+
+### `tf.fit_multiband(...)`
+Same interface, but `data` must be `MultiBandData` and `ctx.filters` is required.
+
+### Prior formats
+`priors` accepts mixed styles:
+- Linear uniform: `"M_ej": (1.0, 8.0)`
+- Log-uniform: `"M_Ni": ("log10", -3.0, -0.3)`
+- Dict style: `"kappa0": {"bounds": (0.03, 0.3), "scale": "linear"}`
+
+## Sampler Notes
+
+Supported samplers:
+- `emcee`
+- `zeus`
+- `dynesty`
+
+Typical `sampler_kwargs`:
+- `emcee` / `zeus`: `nwalkers`, `nsteps`, `burnin`, `thin`, `seed`, `progress`
+- `dynesty`: `nlive`, `sample`, `bound`, `dlogz`, `maxiter`, `maxcall`, `seed`, `progress`, `nsamples`
+
+## Result Object (`FitResult`)
+
+`fit_*` returns `FitResult` with:
+- `model`, `sampler`, `ctx`
+- `param_names`: sampled/free parameters
+- `all_param_names`: full parameter order
+- `fixed`: fixed parameters
+- `samples`: posterior samples, shape `(Ns, ndim)`
+- `log_prob`: log posterior for each sample
+- `meta`: run metadata (bounds, priors, solver config, etc.)
+
+Convenience accessors:
+- `res.best_fit_params` / `res.best_params`
+- `res.best_log_prob`
+- `res.best_sample`
+- `res.best_fit` (compact dict with index, log_prob, params, sample)
+- `res.median_params`
+
+## Plotting
+
+- `tf.plot.corner(res)`
+- `tf.plot.fit_bol(res, data, show_1sigma=True)`
+- `tf.plot.fit_multiband(res, data, show_1sigma=True)`
+
+Plot notes:
+- Fit plots default to no grid.
+- `show_1sigma=True` draws posterior 16%–84% band.
+- Corner labels include units and LaTeX formatting.
+
+## Save and Load
+
+- Save: `path = tf.save(res, path="mcmc_out/fit_demo.npz")`
+- Load: `loaded = tf.load(path)`
+
+Loaded objects are plain dictionaries and can be passed directly to plotting functions.
+
+## Minimal Example
+
 ```python
 import numpy as np
-import matplotlib.pyplot as plt
 import transfit as tf
-```
 
-## 1. Generate a Bolometric Light Curve
+# Context
+ctx = tf.Context(distance=tf.Distance(z=0.001728))
 
-```python
-ctx = tf.Context(
-    distance=tf.Distance(z=0.05)
-)
+# Bolometric data
+a = np.loadtxt("examples/data/sn1993j_lbol.txt")
+t = a[:, 0] - a[:, 0].min()
+data = tf.BolometricData(t_days=t, y=a[:, 1], yerr=a[:, 2])
 
-# Parameter order:
-# (M_ej, v_ej, E_Th_in, M_Ni, R_max_in, x_s, kappa0, kappa_gamma, T_floor)
-theta = (5, 1.0, 1.0, 0.2, 100.0, 0.5, 0.2, 0.03, 4000.0)
-
-bol = tf.lightcurve_bol(
-    model="scni",
-    theta=theta,
+# Quick fit
+res = tf.fit_bol(
+    data=data,
+    model="sc_ni",
     ctx=ctx,
-    Nx=100,
-    Ny=1000,
-    t_max_days=180.0,
+    priors={
+        "M_ej": (0.5, 8.0),
+        "v_ej": (0.2, 3.0),
+        "M_Ni": ("log10", -3.0, -0.2),
+        "E_Th_in": (0.05, 8.0),
+        "R_max_in": (10.0, 400.0),
+    },
+    fixed={"x_s": 0.2, "kappa0": 0.12, "kappa_gamma": 0.03},
+    sampler="emcee",
+    sampler_kwargs=dict(nwalkers=32, nsteps=600, burnin=200, thin=5, seed=123),
 )
 
-plt.plot(bol.t_days, bol.Lbol)
-plt.yscale("log")
-plt.xlabel("Observer Time (days)")
-plt.ylabel("Bolometric Luminosity (erg/s)")
-plt.show()
+print(res.best_fit)
+fig = tf.plot.fit_bol(res, data=data, show_1sigma=True)
 ```
 
-## 2. Generate Multi-band Light Curves
-
-```python
-# band -> nu_eff (Hz)
-filters = {"g": 6.2e14, "r": 4.8e14}
-
-ctx = tf.Context(
-    distance=tf.Distance(z=0.05, DL_cm=1.0e27),
-    filters=filters,
-    y_kind="mag",  # "mag" gives AB magnitude; switch to "flux" for Fnu
-)
-
-mb = tf.lightcurve_multiband(
-    model="scNi",
-    theta=theta,
-    ctx=ctx,
-    bands=["g", "r"],
-    Nx=100,
-    Ny=1000,
-    t_max_days=180.0,
-)
-
-plt.figure()
-plt.plot(mb.t_days, mb.y["g"], label="g")
-plt.plot(mb.t_days, mb.y["r"], label="r")
-plt.gca().invert_yaxis()  # lower magnitude means brighter
-plt.xlabel("t (days)")
-plt.ylabel("AB mag")
-plt.legend()
-plt.show()
-```
-
-## 3. Bolometric Fitting
-
-```python
-# Example data
-data_bol = np.loadtxt("examples/data/sn1993j_lbol.txt")
-
-t = data_bol[:, 0]
-t = t - t.min()
-Lbol = data_bol[:, 1]
-Lbol_err = data_bol[:, 2]
-
-data_bol_tf = tf.BolometricData(
-    t_days=t,
-    y=Lbol,
-    yerr=Lbol_err,
-)
-
-ctx = tf.Context(
-    distance=tf.Distance(z=0.001728),
-    filters={"B": 6.8e14, "V": 5.5e14, "R": 4.7e14, "I": 3.9e14},
-    y_kind="mag",
-)
-
-# Run fitting (example; tune parameters as needed)
-# res_bol = tf.fit_bol(
-#     data=data_bol_tf,
-#     model="scni",
-#     ctx=ctx,
-#     priors={
-#         "M_ej": (1, 5),
-#         "v_ej": (0.3, 3.0),
-#         "M_Ni": (0.01, 0.5),
-#     },
-#     fixed={"kappa0": 0.1, "T_floor": 2000},
-#     sampler_kwargs=dict(
-#         nwalkers=40, nsteps=5000, burnin=300, thin=10,
-#         seed=123, progress=True,
-#     ),
-#     model_kwargs=dict(
-#         Nx=100, Ny=1000, t_max_days=float(np.max(data_bol_tf.t_days) + 50),
-#     ),
-# )
-```
-
-## 4. Multi-band Fitting
-
-**Load observations and reshape to long format**
-```python
-import pandas as pd
-
-csv_path = "examples/data/sn2007gr.csv"
-df = pd.read_csv(csv_path)
-
-# Use JD as the time axis
-t0 = float(np.nanmin(df["JD"].to_numpy(float)))
-df["t_days"] = df["JD"].to_numpy(float) - t0
-
-band_map = [
-    ("B", "Bmag", "e_Bmag"),
-    ("V", "Vmag", "e_Vmag"),
-    ("R", "Rmag", "e_Rmag"),
-    ("I", "Imag", "e_Imag"),
-]
-
-rows = []
-for b, mcol, ecol in band_map:
-    if mcol not in df.columns or ecol not in df.columns:
-        continue
-    m = pd.to_numeric(df[mcol], errors="coerce").to_numpy(float)
-    e = pd.to_numeric(df[ecol], errors="coerce").to_numpy(float)
-    ok = np.isfinite(df["t_days"].to_numpy(float)) & np.isfinite(m) & np.isfinite(e) & (e > 0)
-    if not np.any(ok):
-        continue
-    rows.append(
-        pd.DataFrame(
-            {
-                "t_days": df.loc[ok, "t_days"].to_numpy(float),
-                "band": np.full(np.sum(ok), b, dtype=object),
-                "mag": m[ok],
-                "emag": e[ok],
-            }
-        )
-    )
-
-lc = pd.concat(rows, ignore_index=True).sort_values("t_days").reset_index(drop=True)
-lc = lc[lc["t_days"] < 100].reset_index(drop=True)
-
-data = tf.MultiBandData(
-    t_days=lc["t_days"].to_numpy(float),
-    band=lc["band"].to_numpy(),
-    y=lc["mag"].to_numpy(float),
-    yerr=lc["emag"].to_numpy(float),
-)
-```
-
-**Run fitting (example)**
-```python
-filters = {"B": 6.8e14, "V": 5.5e14, "R": 4.7e14, "I": 3.9e14}
-ctx = tf.Context(distance=tf.Distance(z=0.001728), filters=filters, y_kind="mag")
-
-# res = tf.fit_multiband(
-#     data=data,
-#     model="ni",
-#     ctx=ctx,
-#     priors={
-#         "M_ej": (1, 5),
-#         "v_ej": (0.3, 3.0),
-#         "M_Ni": (0.01, 0.5),
-#         "T_floor": (3000, 8000),
-#     },
-#     fixed={"kappa0": 0.1},
-#     sampler_kwargs=dict(
-#         nwalkers=40, nsteps=5000, burnin=300, thin=10,
-#         seed=123, progress=True,
-#     ),
-#     model_kwargs=dict(
-#         Nx=100, Ny=1000, t_max_days=float(np.max(data.t_days) + 50),
-#     ),
-# )
-```
-
-## 5. Save, Load, and Plot
-
-```python
-# Save
-# path = tf.save(res_bol, path="mcmc_out/fit_scni_test.npz")
-
-# Load
-res_bol_loaded = tf.load("mcmc_out/fit_scni_test.npz")
-
-# Corner plot
-tf.plot.corner(res_bol_loaded)
-
-# Bolometric fit plot
-tf.plot.fit_bol(res_bol_loaded, data=data_bol_tf)
-
-# Multi-band fit plots
-# tf.plot.corner(res)
-# tf.plot.fit_multiband(res, data=data)
-```
-
-## Notes
-- `emcee` is the default MCMC sampler.
-- If `corner` is missing, you will see an import warning; install it if needed.
-- All paths in the examples are relative to the repository root.
-
-## Examples and Tutorial
-- Notebook: `examples/tutorial.ipynb`
-- Example data: `examples/data/`
+## Tutorial Notebook
+- `examples/tutorial.ipynb`
 
 ## Citation
-If you use this software in your research, please cite:
+If you use this software in research, please cite:
+
 ```bibtex
 @ARTICLE{2025ApJ...992...20L,
        author = {{Liu}, Liang-Duan and {Zhang}, Yu-Hao and {Yu}, Yun-Wei and {Du}, Ze-Xin and {Li}, Jing-Yao and {Wu}, Guang-Lei and {Dai}, Zi-Gao},
         title = "{TransFit: An Efficient Framework for Transient Light-curve Fitting with Time-dependent Radiative Diffusion}",
-      journal = {\\apj},
-     keywords = {Supernovae, Radiative transfer, Core-collapse supernovae, Time domain astronomy, 1668, 1335, 304, 2109, High Energy Astrophysical Phenomena, Instrumentation and Methods for Astrophysics},
+      journal = {\apj},
          year = 2025,
-        month = oct,
        volume = {992},
        number = {1},
           eid = {20},
         pages = {20},
           doi = {10.3847/1538-4357/adfed6},
 archivePrefix = {arXiv},
-       eprint = {2505.13825},
- primaryClass = {astro-ph.HE},
-       adsurl = {https://ui.adsabs.harvard.edu/abs/2025ApJ...992...20L},
-      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+       eprint = {2505.13825}
 }
 ```
 
