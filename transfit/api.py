@@ -286,6 +286,7 @@ def predict_bol(
     Nx: int = 100,
     Ny: int = 1000,
     t_max_days: float = 150.0,
+    interp_fill: Literal["edge", "nan", "raise"] = "edge",
 ) -> np.ndarray:
     engine = _get_engine(model)
     theta = _normalize_theta(model, theta, allow_missing_tfloor=True)
@@ -300,7 +301,7 @@ def predict_bol(
         np.asarray(Lbol, float),
         np.asarray(t_days, float),
         yscale="log10",
-        fill="edge",
+        fill=interp_fill,
     )
 
 
@@ -354,6 +355,7 @@ def predict_multiband(
     Nx: int = 100,
     Ny: int = 1000,
     t_max_days: float = 150.0,
+    interp_fill: Literal["edge", "nan", "raise"] = "edge",
     sed=None,
 ) -> np.ndarray:
     sed = sed or BlackbodySED()
@@ -395,7 +397,7 @@ def predict_multiband(
             np.asarray(y_grid[i], float),
             t_days[idx],
             yscale=itp_yscale,
-            fill="edge",
+            fill=interp_fill,
         )
     return out
 
@@ -733,7 +735,9 @@ def fit_multiband(
             return -np.inf
 
         theta_model, t_shift_days = _assemble_theta(sample_vec, names_samp, fixed, names_all)
-        t_eval = t_obs + t_shift_days
+        # Shift model time axis by t_shift_days and compare on observed t_obs.
+        # y_model_shifted(t_obs) = y_model_raw(t_obs - t_shift_days)
+        t_eval = t_obs - t_shift_days
 
         y_mod = predict_multiband(
             model=model,
@@ -833,7 +837,9 @@ def fit_bol(
             return -np.inf
 
         theta_model, t_shift_days = _assemble_theta(sample_vec, names_samp, fixed, names_all)
-        t_eval = t_obs + t_shift_days
+        # Shift model time axis by t_shift_days and compare on observed t_obs.
+        # y_model_shifted(t_obs) = y_model_raw(t_obs - t_shift_days)
+        t_eval = t_obs - t_shift_days
 
         y_mod = predict_bol(
             model=model,

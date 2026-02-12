@@ -61,6 +61,30 @@ def _maybe_invert_mag_axis(ax, y_kind: str):
         ax.invert_yaxis()
 
 
+# Parameter labels with units (LaTeX-ready for matplotlib mathtext).
+_PARAM_LABELS_LATEX = {
+    "M_ej": r"$M_{\mathrm{ej}}\,[M_{\odot}]$",
+    "v_ej": r"$v_{\mathrm{ej}}\,[10^{9}\,\mathrm{cm\,s^{-1}}]$",
+    "M_Ni": r"$M_{\mathrm{Ni}}\,[M_{\odot}]$",
+    "x_s": r"$x_{s}$",
+    "kappa0": r"$\kappa_{0}\,[\mathrm{cm^{2}\,g^{-1}}]$",
+    "kappa_gamma": r"$\kappa_{\gamma}\,[\mathrm{cm^{2}\,g^{-1}}]$",
+    "T_floor": r"$T_{\mathrm{floor}}\,[\mathrm{K}]$",
+    "E_Th_in": r"$E_{\mathrm{th,in}}\,[10^{49}\,\mathrm{erg}]$",
+    "R_max_in": r"$R_{\max,\mathrm{in}}\,[R_{\odot}]$",
+    "P_ms": r"$P_{0}\,[\mathrm{ms}]$",
+    "B14": r"$B\,[10^{14}\,\mathrm{G}]$",
+    "t_shift_days": r"$t_{\mathrm{shift}}\,[\mathrm{day}]$",
+}
+
+
+def _param_label_latex(name: str) -> str:
+    n = str(name)
+    if n in _PARAM_LABELS_LATEX:
+        return _PARAM_LABELS_LATEX[n]
+    return rf"${n.replace('_', r'\_')}$"
+
+
 # -----------------------------------------------------------------------------
 # helpers
 # -----------------------------------------------------------------------------
@@ -145,6 +169,26 @@ def _get_model_name(loaded: Dict[str, Any], fallback: Optional[str] = None) -> s
     raise ValueError("Cannot determine model name; pass model=... to fit_*().")
 
 
+def _prepare_plot_model_kwargs(model_kwargs: Dict[str, Any], required_t_max_days: float) -> Dict[str, Any]:
+    """
+    Ensure plotting evaluation does not hit interpolation edge-clamping.
+    If needed, enlarge t_max_days for forward-model generation.
+    """
+    mk = dict(model_kwargs or {})
+    req = float(required_t_max_days)
+    if not np.isfinite(req) or req <= 0.0:
+        return mk
+
+    cur_raw = mk.get("t_max_days", 150.0)
+    try:
+        cur = float(cur_raw)
+    except Exception:
+        cur = 150.0
+
+    mk["t_max_days"] = max(cur, req + 1.0)
+    return mk
+
+
 def _best_subset(samples: np.ndarray, log_prob: Optional[np.ndarray], max_n: int) -> np.ndarray:
     samples = np.asarray(samples, float)
     if samples.shape[0] <= max_n:
@@ -220,7 +264,8 @@ def corner(
     """
     loaded = _to_loaded(res)
     samples = np.asarray(loaded["samples"], float)
-    labels = [str(x) for x in loaded["param_names"]]
+    pnames = [str(x) for x in loaded["param_names"]]
+    labels = [_param_label_latex(n) for n in pnames]
     logp = loaded.get("log_prob", None)
     logp = np.asarray(logp, float) if logp is not None else None
 
@@ -229,7 +274,7 @@ def corner(
     # truths default: median of posterior (including fixed if present)
     if truths is None:
         pmed = _paramdict_from_samples(loaded, samp, use="median")
-        truths = [pmed.get(k, np.nan) for k in labels]
+        truths = [pmed.get(k, np.nan) for k in pnames]
 
     # robust ranges
     lo = np.quantile(samp, q[0], axis=0)
@@ -241,7 +286,7 @@ def corner(
         ranges.append((float(lo[i] - pad), float(hi[i] + pad)))
 
     if debug:
-        for name, (a, b) in zip(labels, ranges):
+        for name, (a, b) in zip(pnames, ranges):
             print(f"{name:12s}  [{a:.4g}, {b:.4g}]  width={b-a:.4g}")
 
     with plt.rc_context(_journal_rc()):
@@ -286,8 +331,8 @@ def fit_bol(
     # plotting controls
     t_pad: float = 50.0,
     n_t: int = 300,
-    n_draws: int = 0,  # posterior band draws (0 = off)
-    band_quantiles: Tuple[float, float] = (0.16, 0.84),
+    show_1sigma: bool = False,
+    n_draws: int = 0,  # posterior draw count for 1sigma band; <=0 uses internal default
     alpha_band: float = 0.18,
     lw_model: float = 2.2,
     ms_data: float = 6.0,
@@ -327,11 +372,13 @@ def fit_bol(
     pmed = _paramdict_from_samples(loaded, subset, use="median")
     theta_med, t_shift_med = _theta_from_paramdict(loaded, pmed)
 
-    # time grid for model curve: x-axis uses t_plot, model uses t_plot + shift
+    # Plot from model time zero, then map to observed-time axis with t_shift.
+    # x_obs = t_model + t_shift, with t_model >= 0.
     t_obs = np.asarray(data.t_days, float).reshape(-1)
-    tmin = float(np.nanmin(t_obs))
-    tmax = float(np.nanmax(t_obs) + float(t_pad))
-    t_plot = np.linspace(tmin, tmax, int(n_t))
+    model_t_max = max(float(np.nanmax(t_obs) - t_shift_med), 0.0) + float(t_pad)
+    t_model_plot = np.linspace(0.0, model_t_max, int(n_t))
+    t_plot = t_model_plot + t_shift_med
+    model_kwargs_eval = _prepare_plot_model_kwargs(model_kwargs, model_t_max)
 
     y_obs = np.asarray(data.y, float).reshape(-1)
     y_err = np.asarray(data.yerr, float).reshape(-1)
@@ -344,12 +391,13 @@ def fit_bol(
             model=model_name,
             theta=theta_med,
             ctx=ctx,
-            t_days=t_plot ,
-            **model_kwargs,
+            t_days=t_model_plot,
+            interp_fill="nan",
+            **model_kwargs_eval,
         )
 
         ax.errorbar(
-                t_obs, y_obs - t_shift_med, yerr=y_err,
+                t_obs, y_obs, yerr=y_err,
                 fmt="o",
                 ms=ms_data,    
                 mec="k",        
@@ -362,9 +410,10 @@ def fit_bol(
 
         ax.plot(t_plot, y_line, lw=lw_model, label="median model")
 
-        if n_draws and n_draws > 0:
+        if show_1sigma:
             rng = np.random.default_rng(123)
-            draw = min(int(n_draws), subset.shape[0])
+            draw_n = int(n_draws) if int(n_draws) > 0 else 300
+            draw = min(draw_n, subset.shape[0])
             jj = rng.choice(subset.shape[0], size=draw, replace=False)
 
             ys = []
@@ -376,23 +425,33 @@ def fit_bol(
                 for i, name in enumerate(pnames):
                     p[name] = float(subset[j, i])
                 theta_j, tshift_j = _theta_from_paramdict(loaded, p)
-                yj = predict_bol(
-                    model=model_name,
-                    theta=theta_j,
-                    ctx=ctx,
-                    t_days=t_plot + tshift_j,
-                    **model_kwargs,
-                )
+                t_eval = t_plot - tshift_j
+                yj = np.full_like(t_plot, np.nan, dtype=float)
+                valid = t_eval >= 0.0
+                if np.any(valid):
+                    yj[valid] = predict_bol(
+                        model=model_name,
+                        theta=theta_j,
+                        ctx=ctx,
+                        t_days=t_eval[valid],
+                        interp_fill="nan",
+                        **model_kwargs_eval,
+                    )
                 ys.append(yj)
 
             ys = np.asarray(ys, float)
-            lo = np.nanquantile(ys, band_quantiles[0], axis=0)
-            hi = np.nanquantile(ys, band_quantiles[1], axis=0)
-            ax.fill_between(
-                t_plot, lo, hi,
-                alpha=alpha_band,
-                label=f"{band_quantiles[0]:.2f}-{band_quantiles[1]:.2f} posterior",
-            )
+            valid_col = np.any(np.isfinite(ys), axis=0)
+            if np.any(valid_col):
+                lo = np.full(t_plot.shape, np.nan, dtype=float)
+                hi = np.full(t_plot.shape, np.nan, dtype=float)
+                lo[valid_col] = np.nanquantile(ys[:, valid_col], 0.16, axis=0)
+                hi[valid_col] = np.nanquantile(ys[:, valid_col], 0.84, axis=0)
+                ax.fill_between(
+                    t_plot, lo, hi,
+                    where=valid_col,
+                    alpha=alpha_band,
+                    label=r"$1\sigma$ posterior",
+                )
         ax.set_yscale("log")
         ax.set_xlabel("Since First Detection (days)")
         ax.set_ylabel("Bolometric Luminosity")
@@ -400,7 +459,6 @@ def fit_bol(
             ax.set_ylim(*ylim)
 
         ax.minorticks_on()
-        ax.grid(alpha=0.15)
         ax.legend(ncol=1)
         fig.tight_layout()
 
@@ -422,8 +480,8 @@ def fit_multiband(
     # plotting controls
     t_pad: float = 50.0,
     n_t: int = 300,
-    n_draws: int = 0,  # posterior band draws (0 = off)
-    band_quantiles: Tuple[float, float] = (0.16, 0.84),
+    show_1sigma: bool = False,
+    n_draws: int = 0,  # posterior draw count for 1sigma band; <=0 uses internal default
     alpha_band: float = 0.18,
     lw_model: float = 2.2,
     ms_data: float = 6.0,
@@ -463,9 +521,10 @@ def fit_multiband(
     theta_med, t_shift_med = _theta_from_paramdict(loaded, pmed)
 
     t_obs = np.asarray(data.t_days, float).reshape(-1)
-    tmin = float(np.nanmin(t_obs))
-    tmax = float(np.nanmax(t_obs) + float(t_pad))
-    t_plot = np.linspace(tmin, tmax, int(n_t))
+    model_t_max = max(float(np.nanmax(t_obs) - t_shift_med), 0.0) + float(t_pad)
+    t_model_plot = np.linspace(0.0, model_t_max, int(n_t))
+    t_plot = t_model_plot + t_shift_med
+    model_kwargs_eval = _prepare_plot_model_kwargs(model_kwargs, model_t_max)
 
     y_obs = np.asarray(data.y, float).reshape(-1)
     y_err = np.asarray(data.yerr, float).reshape(-1)
@@ -493,20 +552,22 @@ def fit_multiband(
                 color=c, alpha=0.9, label=f"{b} data",
             )
 
-            # x-axis uses t_plot, model uses (t_plot + shift)
+            # Keep x-axis in observed time and shift model time axis by t_shift.
             y_line = predict_multiband(
                 model=model_name,
                 theta=theta_med,
                 ctx=ctx,
-                t_days=t_plot ,
+                t_days=t_model_plot,
                 band=np.array([b] * len(t_plot), dtype=object),
-                **model_kwargs,
+                interp_fill="nan",
+                **model_kwargs_eval,
             )
-            ax.plot(t_plot- t_shift_med, y_line, lw=lw_model, color=c, label=f"{b} model")
+            ax.plot(t_plot, y_line, lw=lw_model, color=c, label=f"{b} model")
 
-            if n_draws and n_draws > 0:
+            if show_1sigma:
                 rng = np.random.default_rng(1000 + (hash(str(b)) % 1000))
-                draw = min(int(n_draws), subset.shape[0])
+                draw_n = int(n_draws) if int(n_draws) > 0 else 300
+                draw = min(draw_n, subset.shape[0])
                 jj = rng.choice(subset.shape[0], size=draw, replace=False)
 
                 ys = []
@@ -515,23 +576,33 @@ def fit_multiband(
                     for i, name in enumerate(pnames):
                         p[name] = float(subset[j, i])
                     theta_j, tshift_j = _theta_from_paramdict(loaded, p)
-
-                    yj = predict_multiband(
-                        model=model_name,
-                        theta=theta_j,
-                        ctx=ctx,
-                        t_days=t_plot + tshift_j,
-                        band=np.array([b] * len(t_plot), dtype=object),
-                        **model_kwargs,
-                    )
+                    t_eval = t_plot - tshift_j
+                    yj = np.full_like(t_plot, np.nan, dtype=float)
+                    valid = t_eval >= 0.0
+                    if np.any(valid):
+                        yj[valid] = predict_multiband(
+                            model=model_name,
+                            theta=theta_j,
+                            ctx=ctx,
+                            t_days=t_eval[valid],
+                            band=np.array([b] * int(np.sum(valid)), dtype=object),
+                            interp_fill="nan",
+                            **model_kwargs_eval,
+                        )
                     ys.append(yj)
 
                 ys = np.asarray(ys, float)
-                lo = np.nanquantile(ys, band_quantiles[0], axis=0)
-                hi = np.nanquantile(ys, band_quantiles[1], axis=0)
-                ax.fill_between(t_plot, lo, hi, color=c, alpha=alpha_band)
+                valid_col = np.any(np.isfinite(ys), axis=0)
+                if np.any(valid_col):
+                    lo = np.full(t_plot.shape, np.nan, dtype=float)
+                    hi = np.full(t_plot.shape, np.nan, dtype=float)
+                    lo[valid_col] = np.nanquantile(ys[:, valid_col], 0.16, axis=0)
+                    hi[valid_col] = np.nanquantile(ys[:, valid_col], 0.84, axis=0)
+                    ax.fill_between(t_plot, lo, hi, where=valid_col, color=c, alpha=alpha_band)
         ax.set_ylim(min(y_obs)-2, max(y_obs)+2)  # invert y-axis for mag/Fnu
-        ax.set_xlim(tmin- t_shift_med-10, tmax+10 )
+        x_min = min(float(np.nanmin(t_obs)), float(np.nanmin(t_plot)))
+        x_max = max(float(np.nanmax(t_obs)), float(np.nanmax(t_plot)))
+        ax.set_xlim(x_min - 10, x_max + 10)
         ax.set_xlabel("Since First Detection (days)")
         ax.set_ylabel("AB mag" if y_kind == "mag" else "F$_\\nu$")
         _maybe_invert_mag_axis(ax, y_kind)
@@ -540,7 +611,6 @@ def fit_multiband(
             ax.set_ylim(*ylim)
 
         ax.minorticks_on()
-        ax.grid(alpha=0.15)
         ax.legend(ncol=2, fontsize=10)
         fig.tight_layout()
 
