@@ -51,16 +51,16 @@ Accepted model keys (case-insensitive aliases are supported in API):
 
 | Model key | Physical meaning | Parameter order (`theta`) |
 |---|---|---|
-| `nickel` / `ni` | Ni-powered model | `(M_ej, v_ej, M_Ni, x_s, kappa0, kappa_gamma, T_floor)` |
-| `sc_ni` / `scni` | Shock-cooling + Ni | `(M_ej, v_ej, E_Th_in, M_Ni, R_max_in, x_s, kappa0, kappa_gamma, T_floor)` |
-| `magnetar` | Pure magnetar | `(M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor)` |
-| `sc_magnetar` | Shock-cooling + magnetar | `(M_ej, v_ej, E_Th_in, P_ms, B14, R_max_in, kappa0, kappa_gamma, T_floor)` |
-| `magnetar_ni` / `mag_ni` / `magni` | Magnetar + Ni | `(M_ej, v_ej, P_ms, B14, M_Ni, kappa0, kappa_gamma, T_floor)` |
+| `nickel` / `ni` | Ni-powered model | `(M_ej, v_ej, M_Ni, x_Ni, kappa, kappa_gamma, T_floor)` |
+| `sc_ni` / `scni` | Shock-cooling + Ni | `(M_ej, v_ej, E_Th_in, M_Ni, R_0, x_Ni, kappa, kappa_gamma, T_floor)` |
+| `magnetar` | Pure magnetar | `(M_ej, v_ej, P_ms, B14, kappa, kappa_gamma, T_floor)` |
+| `sc_magnetar` | Shock-cooling + magnetar | `(M_ej, v_ej, E_Th_in, P_ms, B14, R_0, kappa, kappa_gamma, T_floor)` |
+| `magnetar_ni` / `mag_ni` / `magni` | Magnetar + Ni | `(M_ej, v_ej, P_ms, B14, M_Ni, kappa, kappa_gamma, T_floor)` |
 
 Built-in fixed assumptions:
-- `nickel`: `E_Th_in=0`, `R_max_in=10 R_sun`
-- `magnetar`: `E_Th_in=0`, `R_max_in=1 R_sun`
-- `magnetar_ni`: `E_Th_in=0`, `R_max_in=1 R_sun`
+- `nickel`: `E_Th_in=0`, `R_0=10 R_sun`
+- `magnetar`: `E_Th_in=0`, `R_0=1 R_sun`
+- `magnetar_ni`: `E_Th_in=0`, `R_0=1 R_sun`
 
 ## Parameter Glossary
 
@@ -70,18 +70,18 @@ Built-in fixed assumptions:
 | `v_ej` | Characteristic ejecta velocity | `1e9 cm s^-1` |
 | `M_Ni` | Nickel-56 mass | `M_sun` |
 | `E_Th_in` | Initial thermal energy scale | `1e49 erg` |
-| `R_max_in` | Initial outer-radius scale | `R_sun` |
-| `x_s` | Heating radius fraction | dimensionless `[0,1]` |
-| `kappa0` | Optical opacity | `cm^2 g^-1` |
+| `R_0` | Initial outer-radius scale | `R_sun` |
+| `x_Ni` | Heating radius fraction | dimensionless `[0,1]` |
+| `kappa` | Optical opacity | `cm^2 g^-1` |
 | `kappa_gamma` | Gamma-ray opacity | `cm^2 g^-1` |
 | `P_ms` | Magnetar initial spin period | `ms` |
 | `B14` | Magnetar magnetic field scale | `1e14 G` |
 | `T_floor` | Temperature floor for photosphere | `K` |
-| `t_shift_days` | Time offset between model and observed timeline | `day` |
+| `t_shift` | Time offset between model and observed timeline | `day` |
 
-`t_shift_days` convention in fitting:
-- Likelihood is evaluated as `model(t_obs - t_shift_days)`.
-- Positive `t_shift_days` shifts the model curve to later observed times.
+`t_shift` convention in fitting:
+- Likelihood is evaluated as `model(t_obs + t_shift)`.
+- Positive `t_shift` shifts the model curve to earlier observed times.
 
 ## Fitting API
 
@@ -94,7 +94,7 @@ Key arguments:
 - `fixed`: fixed parameter values
 - `sampler`: `"emcee"`, `"zeus"`, or `"dynesty"`
 - `sampler_kwargs`: sampler-specific config
-- `include_t_shift`: whether to include `t_shift_days` in fit
+- `include_t_shift`: whether to include `t_shift` in fit
 
 Note:
 - The PDE grid settings are managed internally in the default workflow and are not exposed as standard user-facing fit parameters.
@@ -106,7 +106,7 @@ Same interface, but `data` must be `MultiBandData` and `ctx.filters` is required
 `priors` accepts mixed styles:
 - Linear uniform: `"M_ej": (1.0, 8.0)`
 - Log-uniform: `"M_Ni": ("log10", -3.0, -0.3)`
-- Dict style: `"kappa0": {"bounds": (0.03, 0.3), "scale": "linear"}`
+- Dict style: `"kappa": {"bounds": (0.03, 0.3), "scale": "linear"}`
 
 ## Sampler Notes
 
@@ -179,9 +179,9 @@ res = tf.fit_bol(
         "v_ej": (0.2, 3.0),
         "M_Ni": ("log10", -3.0, -0.2),
         "E_Th_in": (0.05, 8.0),
-        "R_max_in": (10.0, 400.0),
+        "R_0": (10.0, 400.0),
     },
-    fixed={"x_s": 0.2, "kappa0": 0.12, "kappa_gamma": 0.03},
+    fixed={"x_Ni": 0.2, "kappa": 0.12, "kappa_gamma": 0.03},
     sampler="emcee",
     sampler_kwargs=dict(nwalkers=32, nsteps=600, burnin=200, thin=5, seed=123),
 )

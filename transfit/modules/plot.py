@@ -19,7 +19,7 @@ Notes:
 """
 
 from __future__ import annotations
-from typing import Any, Dict, Optional, Sequence, Tuple, Union, List
+from typing import Any, Dict, Optional, Sequence, Tuple, Union, List, Literal
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -66,15 +66,15 @@ _PARAM_LABELS_LATEX = {
     "M_ej": r"$M_{\mathrm{ej}}\,[M_{\odot}]$",
     "v_ej": r"$v_{\mathrm{ej}}\,[10^{9}\,\mathrm{cm\,s^{-1}}]$",
     "M_Ni": r"$M_{\mathrm{Ni}}\,[M_{\odot}]$",
-    "x_s": r"$x_{s}$",
-    "kappa0": r"$\kappa_{0}\,[\mathrm{cm^{2}\,g^{-1}}]$",
+    "x_Ni": r"$x_{\mathrm{Ni}}$",
+    "kappa": r"$\kappa\,[\mathrm{cm^{2}\,g^{-1}}]$",
     "kappa_gamma": r"$\kappa_{\gamma}\,[\mathrm{cm^{2}\,g^{-1}}]$",
     "T_floor": r"$T_{\mathrm{floor}}\,[\mathrm{K}]$",
     "E_Th_in": r"$E_{\mathrm{th,in}}\,[10^{49}\,\mathrm{erg}]$",
-    "R_max_in": r"$R_{\max,\mathrm{in}}\,[R_{\odot}]$",
+    "R_0": r"$R_{0}\,[R_{\odot}]$",
     "P_ms": r"$P_{0}\,[\mathrm{ms}]$",
     "B14": r"$B\,[10^{14}\,\mathrm{G}]$",
-    "t_shift_days": r"$t_{\mathrm{shift}}\,[\mathrm{day}]$",
+    "t_shift": r"$t_{\mathrm{shift}}\,[\mathrm{day}]$",
 }
 
 
@@ -220,18 +220,47 @@ def _paramdict_from_samples(
     return vals
 
 
+def _paramdict_best_sample(
+    loaded: Dict[str, Any],
+    samples: np.ndarray,
+    log_prob: Optional[np.ndarray],
+) -> Dict[str, float]:
+    """Full parameter dict using the maximum-posterior sample."""
+    fixed = dict(loaded.get("fixed", {}) or {})
+    pnames = [str(x) for x in loaded["param_names"]]
+    samp = np.asarray(samples, float)
+    if samp.ndim != 2 or samp.shape[0] == 0:
+        raise ValueError("No samples available for best-fit parameter extraction.")
+
+    lp = np.asarray(log_prob, float).reshape(-1) if log_prob is not None else None
+    if lp is None or lp.size != samp.shape[0]:
+        idx = int(samp.shape[0] // 2)
+    else:
+        finite = np.isfinite(lp)
+        if np.any(finite):
+            irel = int(np.argmax(lp[finite]))
+            idx = int(np.where(finite)[0][irel])
+        else:
+            idx = int(np.argmax(lp))
+
+    vals = dict(fixed)
+    for i, n in enumerate(pnames):
+        vals[n] = float(samp[idx, i])
+    return vals
+
+
 def _theta_from_paramdict(loaded: Dict[str, Any], p: Dict[str, float]) -> Tuple[Tuple[float, ...], float]:
     """
-    theta tuple in the order of all_param_names excluding t_shift_days; and t_shift_days.
+    theta tuple in the order of all_param_names excluding t_shift; and t_shift.
     If all_param_names is missing, fallback to param_names order.
     """
     all_names = [str(x) for x in loaded.get("all_param_names", []) if str(x)]
     if not all_names:
         all_names = [str(x) for x in loaded["param_names"]]
 
-    t_shift = float(p.get("t_shift_days", 0.0))
+    t_shift = float(p.get("t_shift", 0.0))
 
-    theta_names = [n for n in all_names if n != "t_shift_days"]
+    theta_names = [n for n in all_names if n != "t_shift"]
     theta: List[float] = []
     for n in theta_names:
         if n not in p:
@@ -255,7 +284,7 @@ def corner(
     bins: int = 35,
     max_points: int = 12000,
     debug: bool = False,
-    title_fmt: str = ".3g",
+    title_fmt: str = ".3f",
     levels: Tuple[float, float, float] = (0.68, 0.95, 0.997),
 ):
     """
@@ -330,9 +359,11 @@ def fit_bol(
     model_kwargs: Optional[Dict[str, Any]] = None,
     # plotting controls
     t_pad: float = 50.0,
-    n_t: int = 300,
+    n_t: int = 800,
     show_1sigma: bool = False,
     n_draws: int = 0,  # posterior draw count for 1sigma band; <=0 uses internal default
+    summary: Literal["best", "median"] = "best",
+    interp_fill_model: Literal["edge", "nan", "raise"] = "nan",
     alpha_band: float = 0.18,
     lw_model: float = 2.2,
     ms_data: float = 6.0,
@@ -351,6 +382,8 @@ def fit_bol(
     # default model_kwargs: use saved meta if exists
     mk_saved = dict((loaded.get("meta", {}) or {}).get("model_kwargs", {}) or {})
     model_kwargs = dict(mk_saved if model_kwargs is None else model_kwargs)
+    # Keep interpolation behavior controlled by `interp_fill_model`.
+    model_kwargs.pop("interp_fill", None)
 
     if ctx is None:
         # FitResult has ctx packed into loaded["ctx"] too, so ok
@@ -369,15 +402,25 @@ def fit_bol(
     logp = np.asarray(logp, float) if logp is not None else None
     subset = _best_subset(samples, logp, max_n=max(3000, (n_draws * 20) if n_draws else 3000))
 
-    pmed = _paramdict_from_samples(loaded, subset, use="median")
-    theta_med, t_shift_med = _theta_from_paramdict(loaded, pmed)
+    mode = str(summary).strip().lower()
+    if mode == "best":
+        p0 = _paramdict_best_sample(loaded, samples, logp)
+        model_label = "best-fit model"
+    elif mode == "median":
+        p0 = _paramdict_from_samples(loaded, subset, use="median")
+        model_label = "median model"
+    else:
+        raise ValueError("summary must be 'best' or 'median'.")
+    theta_0, t_shift_0 = _theta_from_paramdict(loaded, p0)
 
     # Plot from model time zero, then map to observed-time axis with t_shift.
-    # x_obs = t_model + t_shift, with t_model >= 0.
+    # Legacy convention in fitting:
+    # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
+    # so x_obs = t_model - t_shift, with t_model >= 0.
     t_obs = np.asarray(data.t_days, float).reshape(-1)
-    model_t_max = max(float(np.nanmax(t_obs) - t_shift_med), 0.0) + float(t_pad)
+    model_t_max = max(float(np.nanmax(t_obs) + t_shift_0), 0.0) + float(t_pad)
     t_model_plot = np.linspace(0.0, model_t_max, int(n_t))
-    t_plot = t_model_plot + t_shift_med
+    t_plot = t_model_plot - t_shift_0
     model_kwargs_eval = _prepare_plot_model_kwargs(model_kwargs, model_t_max)
 
     y_obs = np.asarray(data.y, float).reshape(-1)
@@ -389,10 +432,10 @@ def fit_bol(
 
         y_line = predict_bol(
             model=model_name,
-            theta=theta_med,
+            theta=theta_0,
             ctx=ctx,
             t_days=t_model_plot,
-            interp_fill="nan",
+            interp_fill=interp_fill_model,
             **model_kwargs_eval,
         )
 
@@ -408,7 +451,7 @@ def fit_bol(
                 label="data",
             )
 
-        ax.plot(t_plot, y_line, lw=lw_model, label="median model")
+        ax.plot(t_plot, y_line, lw=lw_model, label=model_label)
 
         if show_1sigma:
             rng = np.random.default_rng(123)
@@ -425,7 +468,7 @@ def fit_bol(
                 for i, name in enumerate(pnames):
                     p[name] = float(subset[j, i])
                 theta_j, tshift_j = _theta_from_paramdict(loaded, p)
-                t_eval = t_plot - tshift_j
+                t_eval = t_plot + tshift_j
                 yj = np.full_like(t_plot, np.nan, dtype=float)
                 valid = t_eval >= 0.0
                 if np.any(valid):
@@ -434,7 +477,7 @@ def fit_bol(
                         theta=theta_j,
                         ctx=ctx,
                         t_days=t_eval[valid],
-                        interp_fill="nan",
+                        interp_fill=interp_fill_model,
                         **model_kwargs_eval,
                     )
                 ys.append(yj)
@@ -479,9 +522,11 @@ def fit_multiband(
     model_kwargs: Optional[Dict[str, Any]] = None,
     # plotting controls
     t_pad: float = 50.0,
-    n_t: int = 300,
+    n_t: int = 800,
     show_1sigma: bool = False,
     n_draws: int = 0,  # posterior draw count for 1sigma band; <=0 uses internal default
+    summary: Literal["best", "median"] = "best",
+    interp_fill_model: Literal["edge", "nan", "raise"] = "nan",
     alpha_band: float = 0.18,
     lw_model: float = 2.2,
     ms_data: float = 6.0,
@@ -501,6 +546,8 @@ def fit_multiband(
     # default model_kwargs: use saved meta if exists
     mk_saved = dict((loaded.get("meta", {}) or {}).get("model_kwargs", {}) or {})
     model_kwargs = dict(mk_saved if model_kwargs is None else model_kwargs)
+    # Keep interpolation behavior controlled by `interp_fill_model`.
+    model_kwargs.pop("interp_fill", None)
 
     if ctx is None:
         ctx_dict = loaded.get("ctx", {}) or {}
@@ -517,13 +564,21 @@ def fit_multiband(
     logp = np.asarray(logp, float) if logp is not None else None
     subset = _best_subset(samples, logp, max_n=max(3000, (n_draws * 20) if n_draws else 3000))
 
-    pmed = _paramdict_from_samples(loaded, subset, use="median")
-    theta_med, t_shift_med = _theta_from_paramdict(loaded, pmed)
+    mode = str(summary).strip().lower()
+    if mode == "best":
+        p0 = _paramdict_best_sample(loaded, samples, logp)
+        model_tag = "best"
+    elif mode == "median":
+        p0 = _paramdict_from_samples(loaded, subset, use="median")
+        model_tag = "median"
+    else:
+        raise ValueError("summary must be 'best' or 'median'.")
+    theta_0, t_shift_0 = _theta_from_paramdict(loaded, p0)
 
     t_obs = np.asarray(data.t_days, float).reshape(-1)
-    model_t_max = max(float(np.nanmax(t_obs) - t_shift_med), 0.0) + float(t_pad)
+    model_t_max = max(float(np.nanmax(t_obs) + t_shift_0), 0.0) + float(t_pad)
     t_model_plot = np.linspace(0.0, model_t_max, int(n_t))
-    t_plot = t_model_plot + t_shift_med
+    t_plot = t_model_plot - t_shift_0
     model_kwargs_eval = _prepare_plot_model_kwargs(model_kwargs, model_t_max)
 
     y_obs = np.asarray(data.y, float).reshape(-1)
@@ -555,14 +610,14 @@ def fit_multiband(
             # Keep x-axis in observed time and shift model time axis by t_shift.
             y_line = predict_multiband(
                 model=model_name,
-                theta=theta_med,
+                theta=theta_0,
                 ctx=ctx,
                 t_days=t_model_plot,
                 band=np.array([b] * len(t_plot), dtype=object),
-                interp_fill="nan",
+                interp_fill=interp_fill_model,
                 **model_kwargs_eval,
             )
-            ax.plot(t_plot, y_line, lw=lw_model, color=c, label=f"{b} model")
+            ax.plot(t_plot, y_line, lw=lw_model, color=c, label=f"{b} {model_tag}")
 
             if show_1sigma:
                 rng = np.random.default_rng(1000 + (hash(str(b)) % 1000))
@@ -576,7 +631,7 @@ def fit_multiband(
                     for i, name in enumerate(pnames):
                         p[name] = float(subset[j, i])
                     theta_j, tshift_j = _theta_from_paramdict(loaded, p)
-                    t_eval = t_plot - tshift_j
+                    t_eval = t_plot + tshift_j
                     yj = np.full_like(t_plot, np.nan, dtype=float)
                     valid = t_eval >= 0.0
                     if np.any(valid):
@@ -586,7 +641,7 @@ def fit_multiband(
                             ctx=ctx,
                             t_days=t_eval[valid],
                             band=np.array([b] * int(np.sum(valid)), dtype=object),
-                            interp_fill="nan",
+                            interp_fill=interp_fill_model,
                             **model_kwargs_eval,
                         )
                     ys.append(yj)

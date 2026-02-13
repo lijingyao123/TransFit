@@ -11,7 +11,7 @@ IIB_DEFAULT_BOUNDS = np.array([
     # [lo, hi],
 ], dtype=float)
 
-T_SHIFT_NAME = "t_shift_days"
+T_SHIFT_NAME = "t_shift"
 T_SHIFT_BOUNDS = (-10.0, 10.0)
 
 

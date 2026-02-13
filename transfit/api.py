@@ -156,14 +156,14 @@ def _get_engine(model: str):
         _ENGINE_CACHE[m] = eng
         return eng
 
-    # SC Magnetar (keeps E_Th_in and R_max_in as model parameters)
+    # SC Magnetar (keeps E_Th_in and R_0 as model parameters)
     if m in ["scmagnetar", "sc_magnetar", "sc-magnetar"]:
         from .models.sc_magnetar import SCMagnetarModel
         eng = SCMagnetarModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
-    # Pure Magnetar (E_Th_in=0, R_max_in=1 fixed)
+    # Pure Magnetar (E_Th_in=0, R_0=1 fixed)
     if m in ["magnetar", "mag", "mg"]:
         from .models.magnetar import MagnetarModel
         eng = MagnetarModel()
@@ -286,7 +286,7 @@ def predict_bol(
     Nx: int = 100,
     Ny: int = 1000,
     t_max_days: float = 150.0,
-    interp_fill: Literal["edge", "nan", "raise"] = "edge",
+    interp_fill: Literal["edge", "nan", "raise"] = "nan",
 ) -> np.ndarray:
     engine = _get_engine(model)
     theta = _normalize_theta(model, theta, allow_missing_tfloor=True)
@@ -355,7 +355,7 @@ def predict_multiband(
     Nx: int = 100,
     Ny: int = 1000,
     t_max_days: float = 150.0,
-    interp_fill: Literal["edge", "nan", "raise"] = "edge",
+    interp_fill: Literal["edge", "nan", "raise"] = "nan",
     sed=None,
 ) -> np.ndarray:
     sed = sed or BlackbodySED()
@@ -412,6 +412,11 @@ def _split_sampling(
     fixed: Optional[Dict[str, float]],
 ):
     fixed = dict(fixed or {})
+    unknown_fixed = sorted(set(fixed.keys()) - set(names_all))
+    if unknown_fixed:
+        raise KeyError(
+            f"Unknown fixed parameter(s): {unknown_fixed}. Allowed: {names_all}"
+        )
     bounds_all = np.asarray(bounds_all, float)
 
     names_samp: List[str] = []
@@ -441,11 +446,11 @@ def _assemble_theta(
     vals = dict(fixed)
     vals.update({k: float(v) for k, v in zip(names_samp, np.asarray(sample_vec, float))})
 
-    t_shift_days = float(vals.get("t_shift_days", 0.0))
+    t_shift = float(vals.get("t_shift", 0.0))
 
     theta_model: List[float] = []
     for n in names_all:
-        if n == "t_shift_days":
+        if n == "t_shift":
             continue
         if n not in vals:
             raise KeyError(
@@ -454,7 +459,7 @@ def _assemble_theta(
             )
         theta_model.append(float(vals[n]))
 
-    return tuple(theta_model), t_shift_days
+    return tuple(theta_model), t_shift
 
 
 def _apply_log10_priors(
@@ -682,6 +687,33 @@ def _run_sampler(
 
 
 # -------------------------
+# Fit-time interpolation policy
+# -------------------------
+
+def _split_fit_model_kwargs(model_kwargs: Optional[Dict[str, Any]]):
+    """
+    Extract prediction kwargs and interpolation fill policy used by fit lnprob.
+
+    For fitting, edge-clamped extrapolation is disallowed because it evaluates
+    points outside model time range using boundary values.
+    """
+    mk = dict(model_kwargs or {})
+    fill = str(mk.pop("interp_fill", "nan")).strip().lower()
+
+    if fill not in ("edge", "nan", "raise"):
+        raise ValueError(
+            "model_kwargs['interp_fill'] must be one of: 'edge', 'nan', 'raise'."
+        )
+    if fill == "edge":
+        raise ValueError(
+            "model_kwargs['interp_fill']='edge' is not allowed in fitting. "
+            "Use 'nan' or 'raise' to avoid out-of-range edge extrapolation."
+        )
+
+    return mk, fill
+
+
+# -------------------------
 # Public fit API
 # -------------------------
 
@@ -699,6 +731,7 @@ def fit_multiband(
 ) -> FitResult:
     sampler_kwargs = dict(sampler_kwargs or {})
     model_kwargs = dict(model_kwargs or {})
+    model_kwargs_pred, interp_fill_fit = _split_fit_model_kwargs(model_kwargs)
 
     # ---- data ----
     t_obs = _as_1d_float(data.t_days, "data.t_days")
@@ -734,10 +767,11 @@ def fit_multiband(
         if not np.isfinite(lp):
             return -np.inf
 
-        theta_model, t_shift_days = _assemble_theta(sample_vec, names_samp, fixed, names_all)
-        # Shift model time axis by t_shift_days and compare on observed t_obs.
-        # y_model_shifted(t_obs) = y_model_raw(t_obs - t_shift_days)
-        t_eval = t_obs - t_shift_days
+        theta_model, t_shift = _assemble_theta(sample_vec, names_samp, fixed, names_all)
+        # Shift model time axis by t_shift and compare on observed t_obs.
+        # Legacy convention:
+        # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
+        t_eval = t_obs + t_shift
 
         y_mod = predict_multiband(
             model=model,
@@ -745,7 +779,8 @@ def fit_multiband(
             ctx=ctx,
             t_days=t_eval,
             band=band,
-            **model_kwargs,
+            interp_fill=interp_fill_fit,
+            **model_kwargs_pred,
         )
 
         if np.any(~np.isfinite(y_mod)):
@@ -772,7 +807,8 @@ def fit_multiband(
             priors_log10=dict(priors_log10 or {}),
             log_prior_names=sorted([n for n in names_samp if n in log_set_all]),
             include_t_shift=include_t_shift,
-            model_kwargs=model_kwargs,
+            interp_fill_fit=interp_fill_fit,
+            model_kwargs=model_kwargs_pred,
         )
     )
 
@@ -803,6 +839,7 @@ def fit_bol(
 ) -> FitResult:
     sampler_kwargs = dict(sampler_kwargs or {})
     model_kwargs = dict(model_kwargs or {})
+    model_kwargs_pred, interp_fill_fit = _split_fit_model_kwargs(model_kwargs)
 
     t_obs = _as_1d_float(data.t_days, "data.t_days")
     y_obs = _as_1d_float(data.y, "data.y")
@@ -836,17 +873,19 @@ def fit_bol(
         if not np.isfinite(lp):
             return -np.inf
 
-        theta_model, t_shift_days = _assemble_theta(sample_vec, names_samp, fixed, names_all)
-        # Shift model time axis by t_shift_days and compare on observed t_obs.
-        # y_model_shifted(t_obs) = y_model_raw(t_obs - t_shift_days)
-        t_eval = t_obs - t_shift_days
+        theta_model, t_shift = _assemble_theta(sample_vec, names_samp, fixed, names_all)
+        # Shift model time axis by t_shift and compare on observed t_obs.
+        # Legacy convention:
+        # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
+        t_eval = t_obs + t_shift
 
         y_mod = predict_bol(
             model=model,
             theta=theta_model,
             ctx=ctx,
             t_days=t_eval,
-            **model_kwargs,
+            interp_fill=interp_fill_fit,
+            **model_kwargs_pred,
         )
 
         if np.any(~np.isfinite(y_mod)):
@@ -873,7 +912,8 @@ def fit_bol(
             priors_log10=dict(priors_log10 or {}),
             log_prior_names=sorted([n for n in names_samp if n in log_set_all]),
             include_t_shift=include_t_shift,
-            model_kwargs=model_kwargs,
+            interp_fill_fit=interp_fill_fit,
+            model_kwargs=model_kwargs_pred,
         )
     )
 
