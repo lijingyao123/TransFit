@@ -364,6 +364,11 @@ def fit_bol(
     n_draws: int = 0,  # posterior draw count for 1sigma band; <=0 uses internal default
     summary: Literal["best", "median"] = "best",
     interp_fill_model: Literal["edge", "nan", "raise"] = "nan",
+    model_color: str = "#4D4D4D",
+    band_color: str = "#9ECAE1",
+    data_edge_color: str = "#2F2F2F",
+    data_face_color: str = "#E6E6E6",
+    data_err_color: str = "#2F2F2F",
     alpha_band: float = 0.18,
     lw_model: float = 2.2,
     ms_data: float = 6.0,
@@ -443,15 +448,17 @@ def fit_bol(
                 t_obs, y_obs, yerr=y_err,
                 fmt="o",
                 ms=ms_data,    
-                mec="k",        
+                mfc=data_face_color,
+                mec=data_edge_color,
                 mew=1.2,              
                 elinewidth=1.0,
                 capsize=capsize,
                 alpha=0.9,
+                ecolor=data_err_color,
                 label="data",
             )
 
-        ax.plot(t_plot, y_line, lw=lw_model, label=model_label)
+        ax.plot(t_plot, y_line, lw=lw_model, color=model_color, label=model_label)
 
         if show_1sigma:
             rng = np.random.default_rng(123)
@@ -492,6 +499,7 @@ def fit_bol(
                 ax.fill_between(
                     t_plot, lo, hi,
                     where=valid_col,
+                    color=band_color,
                     alpha=alpha_band,
                     label=r"$1\sigma$ posterior",
                 )

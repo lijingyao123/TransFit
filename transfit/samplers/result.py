@@ -136,17 +136,15 @@ class FitResult:
         Compact best-fit record:
           - index
           - log_prob
-          - params / params_fmt
-          - errors / errors_fmt (posterior 16-50-84 summary)
+          - params
+          - errors (posterior 16-50-84 summary)
           - sample (free vector)
         """
         p_best_raw = self.best_params_raw
         post = self._posterior_interval_map()
 
         params = {k: self._round3(v) for k, v in p_best_raw.items()}
-        params_fmt = {k: f"{float(v):.3f}" for k, v in params.items()}
         errors: Dict[str, Any] = {}
-        errors_fmt: Dict[str, Any] = {}
         for k, vbest in p_best_raw.items():
             if k in post:
                 q16, q50, q84 = post[k]
@@ -159,7 +157,6 @@ class FitResult:
                     fixed=False,
                 )
                 errors[k] = ek
-                errors_fmt[k] = f"-{ek['minus']:.3f}/+{ek['plus']:.3f} (q16={ek['q16']:.3f}, q84={ek['q84']:.3f})"
             else:
                 ek = dict(
                     minus=0.0,
@@ -170,14 +167,11 @@ class FitResult:
                     fixed=True,
                 )
                 errors[k] = ek
-                errors_fmt[k] = "fixed"
 
         return dict(
             index=self.best_index,
             log_prob=self.best_log_prob,
             params=params,
-            params_fmt=params_fmt,
             errors=errors,
-            errors_fmt=errors_fmt,
             sample=self.best_sample,
         )
