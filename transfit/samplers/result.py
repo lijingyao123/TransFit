@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 import numpy as np
 
 
@@ -54,6 +54,23 @@ class FitResult:
             if k not in out:
                 out[str(k)] = float(v)
         return out
+
+    def _ordered_all_param_names(self) -> List[str]:
+        if self.all_param_names:
+            return [str(x) for x in self.all_param_names]
+        return [str(x) for x in self.param_names]
+
+    def _theta_and_shift_from_param_dict(self, p: Dict[str, float]) -> Tuple[Tuple[float, ...], float]:
+        names = self._ordered_all_param_names()
+        theta: List[float] = []
+        for n in names:
+            if n == "t_shift":
+                continue
+            if n not in p:
+                raise KeyError(f"Missing parameter '{n}' when building theta.")
+            theta.append(float(p[n]))
+        t_shift = float(p.get("t_shift", 0.0))
+        return tuple(theta), t_shift
 
     def _best_idx(self) -> int:
         lp = np.asarray(self.log_prob, float).reshape(-1)
@@ -129,6 +146,21 @@ class FitResult:
     def median_params(self) -> Dict[str, float]:
         """Alias of `median()` for explicit readability."""
         return self.median()
+
+    @property
+    def best_theta_and_shift(self) -> Tuple[Tuple[float, ...], float]:
+        """Best-fit model input in API-ready form: (theta, t_shift)."""
+        return self._theta_and_shift_from_param_dict(self.best_params_raw)
+
+    @property
+    def best_theta(self) -> Tuple[float, ...]:
+        """Best-fit theta tuple (without t_shift)."""
+        return self.best_theta_and_shift[0]
+
+    @property
+    def best_t_shift(self) -> float:
+        """Best-fit time shift."""
+        return self.best_theta_and_shift[1]
 
     @property
     def best_fit(self) -> Dict[str, Any]:
