@@ -114,6 +114,18 @@ def _check_same_length(**arrays: np.ndarray) -> None:
         raise ValueError(f"Input arrays must have the same length, got: {lens}")
 
 
+def _apply_data_filter(data):
+    """
+    Apply container-level masking/cleaning when available.
+
+    This makes `mask` a first-class part of the public fitting API instead of
+    requiring users to remember calling `.filtered()` manually.
+    """
+    if hasattr(data, "filtered"):
+        return data.filtered()
+    return data
+
+
 # -------------------------
 # Model registry
 # -------------------------
@@ -342,6 +354,8 @@ def predict_multiband(
 ) -> np.ndarray:
     sed = sed or BlackbodySED()
 
+    if ctx.filters is None:
+        raise ValueError("ctx.filters is required for multiband. For bolometric you can omit it.")
     filters = _norm_filters(ctx.filters)
     t_days = np.asarray(t_days, float).reshape(-1)
 
@@ -714,6 +728,7 @@ def fit_multiband(
     sampler_kwargs = dict(sampler_kwargs or {})
     model_kwargs = dict(model_kwargs or {})
     model_kwargs_pred, interp_fill_fit = _split_fit_model_kwargs(model_kwargs)
+    data = _apply_data_filter(data)
 
     # ---- data ----
     t_obs = _as_1d_float(data.t_days, "data.t_days")
@@ -822,6 +837,7 @@ def fit_bol(
     sampler_kwargs = dict(sampler_kwargs or {})
     model_kwargs = dict(model_kwargs or {})
     model_kwargs_pred, interp_fill_fit = _split_fit_model_kwargs(model_kwargs)
+    data = _apply_data_filter(data)
 
     t_obs = _as_1d_float(data.t_days, "data.t_days")
     y_obs = _as_1d_float(data.y, "data.y")

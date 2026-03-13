@@ -1,3 +1,5 @@
+from importlib import import_module
+
 from .api import (
     Distance, Context,
     BolometricLC, MultiBandLC,
@@ -7,7 +9,13 @@ from .api import (
     fit_bol, fit_multiband,
 )
 from .modules.io import save, load, default_outpath
-from .modules import plot
+
+
+def __getattr__(name):
+    if name == "plot":
+        # Plotting stays optional until the user actually asks for it.
+        return import_module(".modules.plot", __name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
