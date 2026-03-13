@@ -4,13 +4,12 @@
 - Excluded by request:
   - Packaging/publish flow (`pip install` / `pyproject.toml`)
   - Open-source license selection
+  - Automated tests and GitHub Actions CI
 - Completed:
   - Optional sampler import behavior
   - Data container consolidation
   - Ignore rules cleanup
   - README sync and typo/encoding fix
-  - Basic automated tests
-  - GitHub Actions CI workflow
 
 ## Changes
 1. Optional sampler lazy-loading
@@ -51,35 +50,21 @@
 
 5. README synchronization
 - Updated `readme.md`:
-  - Project layout now includes `tests/`.
   - Clarified lazy-loaded optional sampler dependencies.
   - Added data-container note (`mask` and `.filtered()`).
   - Fixed plotting note text:
     - `show_1sigma` interval now documented as `16%-84%`.
-  - Added testing section (`pytest -q`).
+  - Replaced testing section with contact information for Liangduan Liu and Yuhao Zhang.
 
-6. Automated tests
-- Added `tests/test_data_containers.py`:
-  - Container validation checks
-  - `.filtered()` behavior checks
-  - `bands` property behavior
-- Added `tests/test_import_and_sampler_dispatch.py`:
-  - Public API import smoke checks
-  - Lazy backend import check (no backend module import on `transfit.samplers` import)
-  - Unknown sampler dispatch error check
-
-7. CI workflow
-- Added `.github/workflows/ci.yml`:
-  - Python matrix: `3.10`, `3.11`, `3.12`
-  - Installs test dependencies
-  - Runs `pytest -q`
+6. Validation and CI
+- Automated tests and GitHub Actions CI were removed by request.
+- Result:
+  - The repository no longer ships test files or workflow-based checks pending manual review.
 
 ## Verification
-- Could not run local test suite in current environment:
-  - `pytest` command not found.
-  - `py` launcher not found.
-- CI workflow is added to validate these tests in GitHub after push.
+- No local automated verification was run.
 
 ## Remaining Manual Items
 - Packaging and installation metadata (`pyproject.toml`) [deferred by request]
 - License selection and license file [deferred by request]
+- Automated tests and CI [deferred by request]

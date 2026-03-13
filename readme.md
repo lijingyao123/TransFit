@@ -16,7 +16,6 @@ The full walkthrough is in `examples/tutorial.ipynb`.
 - `transfit/samplers/`: sampler backends and result container
 - `transfit/modules/`: plotting and I/O helpers
 - `examples/`: tutorial notebooks
-- `tests/`: automated tests
 - `examples/data/`: sample datasets
 
 ## Environment
@@ -197,12 +196,11 @@ fig = tf.plot.fit_bol(res, data=data, show_1sigma=True)
 ## Tutorial Notebook
 - `examples/tutorial.ipynb`
 
-## Testing
-Run tests from repository root:
+## Contact
+For questions about this project, please contact the following by email:
 
-```bash
-pytest -q
-```
+- Liangduan Liu ([liuld@ccnu.edu.cn])
+- Yuhao Zhang ([zhangyh2001@foxmail.com])
 
 ## Citation
 If you use this software in research, please cite:
