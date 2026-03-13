@@ -1,4 +1,4 @@
-# Transfit
+﻿# Transfit
 
 Transfit is a lightweight framework for transient light-curve modeling and Bayesian fitting.
 It supports:
@@ -15,7 +15,8 @@ The full walkthrough is in `examples/tutorial.ipynb`.
 - `transfit/priors/`: default parameter names and bounds
 - `transfit/samplers/`: sampler backends and result container
 - `transfit/modules/`: plotting and I/O helpers
-- `examples/`: tutorial and tests
+- `examples/`: tutorial notebooks
+- `tests/`: automated tests
 - `examples/data/`: sample datasets
 
 ## Environment
@@ -32,6 +33,8 @@ Optional dependencies:
 - `corner` (for corner plots)
 - `emcee`, `zeus`, `dynesty` (for fitting backends)
 
+Optional sampler backends are imported lazily, so `import transfit` does not require all sampler packages to be installed.
+
 ## Core Concepts
 
 ### 1. `Context`
@@ -42,6 +45,7 @@ Optional dependencies:
 ### 2. Data containers
 - `tf.BolometricData(t_days, y, yerr)`
 - `tf.MultiBandData(t_days, band, y, yerr)`
+- Both containers also accept optional `mask` and provide `.filtered()` helpers.
 
 All arrays must have matching lengths; `yerr` must be finite and positive.
 
@@ -145,7 +149,7 @@ Convenience accessors:
 
 Plot notes:
 - Fit plots default to no grid.
-- `show_1sigma=True` draws posterior 16%–84% band.
+- `show_1sigma=True` draws posterior 16%-84% band.
 - Corner labels include units and LaTeX formatting.
 
 ## Save and Load
@@ -192,6 +196,13 @@ fig = tf.plot.fit_bol(res, data=data, show_1sigma=True)
 
 ## Tutorial Notebook
 - `examples/tutorial.ipynb`
+
+## Testing
+Run tests from repository root:
+
+```bash
+pytest -q
+```
 
 ## Citation
 If you use this software in research, please cite:

@@ -7,12 +7,18 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 build/
 dist/
 *.egg-info/
 
 # outputs
 MCMC_out/
+mcmc_out/
 *.npz
 *.h5
 *.log

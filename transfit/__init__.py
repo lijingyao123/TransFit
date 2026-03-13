@@ -17,4 +17,6 @@ __all__ = [
     "lightcurve_bol", "lightcurve_multiband",
     "predict_bol", "predict_multiband",
     "fit_bol", "fit_multiband",
+    "save", "load", "default_outpath",
+    "plot",
 ]

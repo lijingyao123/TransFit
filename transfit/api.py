@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Sequence, Literal, Any, Tuple
 
 import numpy as np
 
+from .data import BolometricData, MultiBandData
 from .modules.interp import interp_fit
 from .modules.sed import BlackbodySED
 from .samplers import FitResult, gaussian_lnlike, run_emcee, run_zeus, run_dynesty
@@ -67,25 +68,6 @@ class MultiBandLC:
     t_days: np.ndarray
     bands: List[str]
     y: Dict[str, np.ndarray]                  # band -> mag/flux array
-
-
-# -------------------------
-# Data containers
-# -------------------------
-
-@dataclass(frozen=True)
-class BolometricData:
-    t_days: np.ndarray
-    y: np.ndarray
-    yerr: np.ndarray
-
-
-@dataclass(frozen=True)
-class MultiBandData:
-    t_days: np.ndarray
-    band: np.ndarray
-    y: np.ndarray
-    yerr: np.ndarray
 
 
 # -------------------------
