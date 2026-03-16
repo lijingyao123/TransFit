@@ -1,17 +1,39 @@
-<p align="center">
-  <img src="docs/TransFit_logo.png" width="300">
-</p>
-
 # TransFit
 
-**TransFit** is a fast and physically motivated **light-curve fitting framework** for astronomical transients such as supernovae.  
-It numerically solves the **time-dependent radiative diffusion equation** in expanding ejecta and performs **Bayesian parameter inference using MCMC sampling**, enabling efficient fitting of observed transient light curves.
-
-Compared with traditional **semi-analytical models** (e.g., Arnett-like models), which rely on simplified and time-independent temperature structures, TransFit directly solves the diffusion equation. This allows the model to capture **time-dependent temperature evolution, non-uniform heating distributions, and the transition from shock-cooling to radioactive-powered emission**, while maintaining **computational speeds comparable to semi-analytical approaches**.
-
-By combining **physical realism with efficient MCMC fitting**, TransFit provides a practical tool for rapid light-curve modeling and parameter inference in the era of large time-domain surveys.
-
 ---
+
+<table>
+<tr>
+<td width="42%" align="center" valign="top">
+  <img src="docs/TransFit_logo.png" width="420" alt="TransFit logo">
+</td>
+<td width="58%" valign="top">
+
+<p>
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB">
+  <img alt="Inference" src="https://img.shields.io/badge/Inference-MCMC-C0392B">
+  <img alt="Models" src="https://img.shields.io/badge/Models-Diffusion%20Powered-1F4E79">
+  <img alt="Data" src="https://img.shields.io/badge/Data-Bolometric%20%7C%20Multi--band-2E8B57">
+  <img alt="Acceleration" src="https://img.shields.io/badge/Acceleration-Numba-00A3E0">
+</p>
+
+<p>
+  <a href="examples/tutorial.ipynb">Tutorial Notebook</a> |
+  <a href="examples/data">Example Data</a> |
+  <a href="#how-to-use">Quick Start</a> |
+  <a href="https://doi.org/10.3847/1538-4357/adfed6">Paper</a>
+</p>
+
+<p><strong>TransFit</strong> is a fast and physically motivated <strong>light-curve fitting framework</strong> for astronomical transients such as supernovae.
+It numerically solves the <strong>time-dependent radiative diffusion equation</strong> in expanding ejecta and performs <strong>Bayesian parameter inference using MCMC sampling</strong>, enabling efficient fitting of observed transient light curves.</p>
+
+<p>Compared with traditional <strong>semi-analytical models</strong> (e.g., Arnett-like models), which rely on simplified and time-independent temperature structures, TransFit directly solves the diffusion equation. This allows the model to capture <strong>time-dependent temperature evolution, non-uniform heating distributions, and the transition from shock-cooling to radioactive-powered emission</strong>, while maintaining <strong>computational speeds comparable to semi-analytical approaches</strong>.</p>
+
+<p>By combining <strong>physical realism with efficient MCMC fitting</strong>, TransFit provides a practical tool for rapid light-curve modeling and parameter inference in the era of large time-domain surveys.</p>
+
+</td>
+</tr>
+</table>
 
 ## Advantages
 
