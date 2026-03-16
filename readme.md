@@ -1,34 +1,27 @@
-# Transfit
+<p align="center">
+  <img src="docs/logo.png" width="300">
+</p>
 
-Transfit is a lightweight framework for transient light-curve modeling and Bayesian fitting.
+# TransFit
 
-It is designed for two standard use cases:
-- fit bolometric light curves
-- fit multi-band light curves in AB magnitude or flux density
+**TransFit** is a fast and physically motivated **light-curve fitting framework** for astronomical transients such as supernovae.  
+It numerically solves the **time-dependent radiative diffusion equation** in expanding ejecta and performs **Bayesian parameter inference using MCMC sampling**, enabling efficient fitting of observed transient light curves.
 
-The package also provides plotting, save/load helpers, and advanced forward-model interfaces for custom workflows.
+Compared with traditional **semi-analytical models** (e.g., Arnett-like models), which rely on simplified and time-independent temperature structures, TransFit directly solves the diffusion equation. This allows the model to capture **time-dependent temperature evolution, non-uniform heating distributions, and the transition from shock-cooling to radioactive-powered emission**, while maintaining **computational speeds comparable to semi-analytical approaches**.
 
-## What You Need to Know
+By combining **physical realism with efficient MCMC fitting**, TransFit provides a practical tool for rapid light-curve modeling and parameter inference in the era of large time-domain surveys.
 
-For most users, Transfit only requires three decisions:
-1. choose a data container
-2. choose a model key
-3. call `tf.fit_bol(...)` or `tf.fit_multiband(...)`
+---
 
-Standard public fitting APIs:
-- `tf.BolometricData(...)`
-- `tf.MultiBandData(...)`
-- `tf.fit_bol(...)`
-- `tf.fit_multiband(...)`
-- `tf.plot.fit_bol(...)`
-- `tf.plot.fit_multiband(...)`
-- `tf.plot.corner(...)`
-- `tf.save(...)`
-- `tf.load(...)`
+## Advantages
 
-The full walkthrough is in `examples/tutorial.ipynb`.
+- Physically motivated: directly solves the time-dependent diffusion equation instead of relying on static semi-analytical approximations.
+- Fast for fitting: designed for efficient Bayesian inference with MCMC backends such as `emcee`, `zeus`, and `dynesty`.
+- Built for common workflows: supports both bolometric light-curve fitting and multi-band light-curve fitting.
+- Simple public API: most users only need `tf.BolometricData(...)` or `tf.MultiBandData(...)`, plus `tf.fit_bol(...)` or `tf.fit_multiband(...)`.
+- Practical output tools: includes fit plotting, corner plotting, and save/load helpers for standard analysis workflows.
 
-## Quick Start
+## How To Use
 
 Run from the repository root so `import transfit` works directly.
 
@@ -45,7 +38,19 @@ Optional dependencies:
 
 Optional sampler backends are imported lazily, so `import transfit` does not require all sampler packages to be installed.
 
-### Bolometric Fit
+### 1. Prepare your data
+
+Choose the data container that matches your observations:
+
+- `tf.BolometricData(t_days, y, yerr, mask=None)`
+- `tf.MultiBandData(t_days, band, y, yerr, mask=None)`
+
+Rules:
+- all arrays must have matching lengths
+- `yerr` must be finite and positive
+- `mask` is optional and will be respected automatically during fitting
+
+### 2. Fit a bolometric light curve
 
 ```python
 import numpy as np
@@ -85,12 +90,9 @@ res = tf.fit_bol(
         seed=123,
     ),
 )
-
-print(res.best_fit)
-fig = tf.plot.fit_bol(res, data=data, show_1sigma=True)
 ```
 
-### Multi-band Fit
+### 3. Fit a multi-band light curve
 
 ```python
 import transfit as tf
@@ -124,35 +126,11 @@ res = tf.fit_multiband(
         "kappa": 0.06,
     },
 )
-
-fig = tf.plot.fit_multiband(res, data=data, show_1sigma=True)
 ```
 
-## Standard Workflow
+### 4. Read, plot, and save the result
 
-### 1. Choose the data container
-
-- `tf.BolometricData(t_days, y, yerr, mask=None)`
-- `tf.MultiBandData(t_days, band, y, yerr, mask=None)`
-
-Rules:
-- all arrays must have matching lengths
-- `yerr` must be finite and positive
-- `mask` is optional and will be respected automatically during fitting
-
-### 2. Choose the fit function
-
-- Use `tf.fit_bol(...)` for bolometric or thermal light curves
-- Use `tf.fit_multiband(...)` for multi-band light curves
-
-Distance inputs:
-- for bolometric fitting, pass `z=...` or `DL_cm=...`
-- for multi-band fitting, also pass `filters={band: nu_eff}`
-- `y_kind` defaults to `"mag"` and only needs to be changed for flux fitting
-
-### 3. Read the result
-
-`fit_bol` and `fit_multiband` return `FitResult`.
+`fit_bol(...)` and `fit_multiband(...)` return `FitResult`.
 
 Most useful accessors:
 - `res.best_fit`
@@ -160,13 +138,20 @@ Most useful accessors:
 - `res.median_params`
 - `res.best_log_prob`
 
-### 4. Plot or save the result
+Common follow-up operations:
 
-- `tf.plot.fit_bol(res, data, show_1sigma=True)`
-- `tf.plot.fit_multiband(res, data, show_1sigma=True)`
-- `tf.plot.corner(res)`
-- `tf.save(res, path=...)`
-- `tf.load(path)`
+```python
+print(res.best_fit)
+
+fig = tf.plot.fit_bol(res, data=data, show_1sigma=True)
+# or
+fig = tf.plot.fit_multiband(res, data=data, show_1sigma=True)
+
+corner_fig = tf.plot.corner(res)
+
+path = tf.save(res, path="mcmc_out/fit_demo.npz")
+loaded = tf.load(path)
+```
 
 ## Models
 
@@ -249,15 +234,6 @@ Notes:
 - `show_1sigma=True` draws the posterior 16%-84% band
 - corner labels include units and LaTeX formatting
 
-## Save and Load
-
-```python
-path = tf.save(res, path="mcmc_out/fit_demo.npz")
-loaded = tf.load(path)
-```
-
-Loaded objects are plain dictionaries and can be passed directly to plotting functions.
-
 ## Advanced Usage
 
 The package also provides forward-model helpers for users who want custom prediction or custom plotting workflows:
@@ -267,16 +243,6 @@ The package also provides forward-model helpers for users who want custom predic
 - `predict_multiband(...)`
 
 These helpers use internal forward-model context objects and are not required for standard fitting workflows.
-
-## Project Layout
-
-- `transfit/`: core package
-- `transfit/models/`: physical light-curve engines
-- `transfit/priors/`: default parameter names and bounds
-- `transfit/samplers/`: sampler backends and result container
-- `transfit/modules/`: plotting and I/O helpers
-- `examples/`: tutorial notebooks
-- `examples/data/`: sample datasets
 
 ## Tutorial Notebook
 
