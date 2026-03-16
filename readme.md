@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.png" width="300">
+  <img src="docs/TransFit_logo.png" width="300">
 </p>
 
 # TransFit
