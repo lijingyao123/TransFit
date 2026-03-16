@@ -137,12 +137,21 @@ class SCMagnetarModel:
     - This version is ideal for heavy-duty MCMC sampling.
     """
 
-    def __init__(self):
-        # JIT warm-up: run a small solve once at initialization.
-        print("Initializing and JIT-compiling the model...")
-        dummy_theta = (10.0, 1.0, 1.0, 0.1, 100.0, 0.5, 0.2, 0.03, 4000)
-        self.calculate_light_curve(dummy_theta, Nx=10, Ny=20)
-        print("Model is ready for fast execution.")
+    _warmup_theta = (10.0, 1.0, 1.0, 0.1, 100.0, 0.5, 0.2, 0.03, 4000.0)
+    _warmup_kwargs = {"Nx": 10, "Ny": 20}
+
+    def __init__(self, *, warmup: bool = False):
+        if warmup:
+            self.warmup()
+
+    def warmup(self, **kwargs):
+        """
+        Explicitly trigger a small solve to precompile the JIT path.
+        """
+        warmup_kwargs = dict(self._warmup_kwargs)
+        warmup_kwargs.update(kwargs)
+        self.calculate_light_curve(self._warmup_theta, **warmup_kwargs)
+        return self
 
     def calculate_light_curve(self, theta, Nx=100, Ny=1000, t_max_days=150.0):
         pi, c, day = PI, C_LIGHT, DAY

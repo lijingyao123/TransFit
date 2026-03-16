@@ -39,15 +39,42 @@ class Distance:
 @dataclass(frozen=True)
 class Context:
     """
-    Context for forward model.
+    Internal context for forward-model evaluation.
 
-    - Bolometric (predict_bol / fit_bol): only distance is required.
-    - Multi-band (predict_multiband / fit_multiband): filters is required,
+    - Bolometric prediction: only distance is required.
+    - Multi-band prediction: filters is required,
       y_kind defaults to "mag".
     """
     distance: Distance
     filters: Optional[Dict[str, float]] = None        # band -> nu_eff (Hz), only for multiband
     y_kind: Literal["mag", "flux"] = "mag"            # only matters for multiband
+
+
+def _context_from_fit_inputs(
+    *,
+    z: Optional[float],
+    DL_cm: Optional[float],
+    filters: Optional[Dict[str, float]],
+    y_kind: Literal["mag", "flux"],
+    require_filters: bool,
+) -> Context:
+    """
+    Build the internal Context used by fitting.
+
+    Public fitting APIs accept direct scalar inputs instead of exposing
+    Context/Distance as required user-facing concepts.
+    """
+    if z is None and DL_cm is None:
+        raise ValueError("Provide one of `z` or `DL_cm`.")
+    if require_filters and filters is None:
+        raise ValueError(
+            "filters is required for multiband fitting."
+        )
+    return Context(
+        distance=Distance(z=z, DL_cm=DL_cm),
+        filters=filters,
+        y_kind=str(y_kind),
+    )
 
 
 
@@ -709,15 +736,14 @@ def _split_fit_model_kwargs(model_kwargs: Optional[Dict[str, Any]]):
     return mk, fill
 
 
-# -------------------------
-# Public fit API
-# -------------------------
-
 def fit_multiband(
     *,
     data: MultiBandData,
     model: str,
-    ctx: Context,
+    z: Optional[float] = None,
+    DL_cm: Optional[float] = None,
+    filters: Optional[Dict[str, float]] = None,
+    y_kind: Literal["mag", "flux"] = "mag",
     priors: Optional[Dict[str, Any]] = None,
     fixed: Optional[Dict[str, float]] = None,
     sampler: str = "emcee",
@@ -725,6 +751,13 @@ def fit_multiband(
     model_kwargs: Optional[Dict[str, Any]] = None,
     include_t_shift: bool = True,
 ) -> FitResult:
+    ctx = _context_from_fit_inputs(
+        z=z,
+        DL_cm=DL_cm,
+        filters=filters,
+        y_kind=y_kind,
+        require_filters=True,
+    )
     sampler_kwargs = dict(sampler_kwargs or {})
     model_kwargs = dict(model_kwargs or {})
     model_kwargs_pred, interp_fill_fit = _split_fit_model_kwargs(model_kwargs)
@@ -826,7 +859,8 @@ def fit_bol(
     *,
     data: BolometricData,
     model: str,
-    ctx: Context,
+    z: Optional[float] = None,
+    DL_cm: Optional[float] = None,
     priors: Optional[Dict[str, Any]] = None,
     fixed: Optional[Dict[str, float]] = None,
     sampler: str = "emcee",
@@ -834,6 +868,13 @@ def fit_bol(
     model_kwargs: Optional[Dict[str, Any]] = None,
     include_t_shift: bool = True,
 ) -> FitResult:
+    ctx = _context_from_fit_inputs(
+        z=z,
+        DL_cm=DL_cm,
+        filters=None,
+        y_kind="mag",
+        require_filters=False,
+    )
     sampler_kwargs = dict(sampler_kwargs or {})
     model_kwargs = dict(model_kwargs or {})
     model_kwargs_pred, interp_fill_fit = _split_fit_model_kwargs(model_kwargs)

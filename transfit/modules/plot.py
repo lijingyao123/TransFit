@@ -4,6 +4,7 @@
 One-click plotting helpers for transfit.
 
 Public:
+  - fit(res, data, ...)
   - corner(res, ...)
   - fit_multiband(res, data, ...)
   - fit_bol(res, data, ...)
@@ -274,6 +275,16 @@ def _theta_from_paramdict(loaded: Dict[str, Any], p: Dict[str, float]) -> Tuple[
 # public: corner
 # -----------------------------------------------------------------------------
 
+def fit(res, data, **kwargs):
+    """
+    User-facing plot entry point.
+
+    Dispatches to the bolometric or multi-band plot helper based on `data`.
+    """
+    if hasattr(data, "band"):
+        return fit_multiband(res, data, **kwargs)
+    return fit_bol(res, data, **kwargs)
+
 def corner(
     res: Union[Dict[str, Any], Any],
     *,
@@ -354,7 +365,6 @@ def fit_bol(
     res: Union[Dict[str, Any], Any],
     data,
     *,
-    ctx=None,
     model: Optional[str] = None,
     model_kwargs: Optional[Dict[str, Any]] = None,
     # plotting controls
@@ -390,13 +400,11 @@ def fit_bol(
     # Keep interpolation behavior controlled by `interp_fill_model`.
     model_kwargs.pop("interp_fill", None)
 
-    if ctx is None:
-        # FitResult has ctx packed into loaded["ctx"] too, so ok
-        ctx_dict = loaded.get("ctx", {}) or {}
-        if ctx_dict:
-            ctx = _make_ctx_from_dict(ctx_dict)
-        else:
-            raise ValueError("ctx is required (not found in loaded result).")
+    ctx_dict = loaded.get("ctx", {}) or {}
+    if ctx_dict:
+        ctx = _make_ctx_from_dict(ctx_dict)
+    else:
+        raise ValueError("ctx is required (not found in loaded result).")
 
     y_kind = str(getattr(ctx, "y_kind", "mag")).lower()  # usually irrelevant for bol, but keep for label
 
@@ -525,7 +533,6 @@ def fit_multiband(
     res: Union[Dict[str, Any], Any],
     data,
     *,
-    ctx=None,
     model: Optional[str] = None,
     model_kwargs: Optional[Dict[str, Any]] = None,
     # plotting controls
@@ -557,12 +564,11 @@ def fit_multiband(
     # Keep interpolation behavior controlled by `interp_fill_model`.
     model_kwargs.pop("interp_fill", None)
 
-    if ctx is None:
-        ctx_dict = loaded.get("ctx", {}) or {}
-        if ctx_dict:
-            ctx = _make_ctx_from_dict(ctx_dict)
-        else:
-            raise ValueError("ctx is required (not found in loaded result).")
+    ctx_dict = loaded.get("ctx", {}) or {}
+    if ctx_dict:
+        ctx = _make_ctx_from_dict(ctx_dict)
+    else:
+        raise ValueError("ctx is required (not found in loaded result).")
 
     y_kind = str(getattr(ctx, "y_kind", "mag")).lower()
     model_name = _get_model_name(loaded, fallback=model)
@@ -681,4 +687,4 @@ def fit_multiband(
         return fig
 
 
-__all__ = ["corner", "fit_multiband", "fit_bol"]
+__all__ = ["fit", "corner", "fit_multiband", "fit_bol"]

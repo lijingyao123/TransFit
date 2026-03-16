@@ -34,31 +34,41 @@ Optional dependencies:
 
 Optional sampler backends are imported lazily, so `import transfit` does not require all sampler packages to be installed.
 
-## Core Concepts
+## Standard Workflow
 
-### 1. `Context`
-- `distance`: `tf.Distance(z=..., DL_cm=...)`
-- `filters`: dict of effective frequency, e.g. `{"B": 6.8e14, "V": 5.5e14}` (required for multi-band)
-- `y_kind`: `"mag"` or `"flux"`
+For most users, you only need to understand three things:
+- choose a data container
+- choose a model key
+- call `tf.fit_bol(...)` or `tf.fit_multiband(...)`
 
-### 2. Data containers
+### 1. Data containers
 - `tf.BolometricData(t_days, y, yerr)`
 - `tf.MultiBandData(t_days, band, y, yerr)`
 - Both containers also accept optional `mask` and provide `.filtered()` helpers.
 
 All arrays must have matching lengths; `yerr` must be finite and positive.
 
+### 2. Distance and filters
+- For bolometric fitting, pass `z=...` or `DL_cm=...` directly to `tf.fit_bol(...)`.
+- For multi-band fitting, use `tf.fit_multiband(...)` and also pass `filters={"B": 6.8e14, "V": 5.5e14, ...}`.
+- `y_kind` defaults to `"mag"` and only needs to be changed for flux fitting.
+
+### 3. Advanced context API
+`Context` / `Distance` are internal forward-model helpers. Standard fitting does not require them.
+
 ## Models and Parameter Order
 
-Accepted model keys (case-insensitive aliases are supported in API):
+Standard model keys:
 
 | Model key | Physical meaning | Parameter order (`theta`) |
 |---|---|---|
-| `nickel` / `ni` | Ni-powered model | `(M_ej, v_ej, M_Ni, x_Ni, kappa, kappa_gamma, T_floor)` |
-| `sc_ni` / `scni` | Shock-cooling + Ni | `(M_ej, v_ej, E_Th_in, M_Ni, R_0, x_Ni, kappa, kappa_gamma, T_floor)` |
+| `nickel` | Ni-powered model | `(M_ej, v_ej, M_Ni, x_Ni, kappa, kappa_gamma, T_floor)` |
+| `sc_ni` | Shock-cooling + Ni | `(M_ej, v_ej, E_Th_in, M_Ni, R_0, x_Ni, kappa, kappa_gamma, T_floor)` |
 | `magnetar` | Pure magnetar | `(M_ej, v_ej, P_ms, B14, kappa, kappa_gamma, T_floor)` |
+| `magnetar_ni` | Magnetar + Ni | `(M_ej, v_ej, P_ms, B14, M_Ni, kappa, kappa_gamma, T_floor)` |
 | `sc_magnetar` | Shock-cooling + magnetar | `(M_ej, v_ej, E_Th_in, P_ms, B14, R_0, kappa, kappa_gamma, T_floor)` |
-| `magnetar_ni` / `mag_ni` / `magni` | Magnetar + Ni | `(M_ej, v_ej, P_ms, B14, M_Ni, kappa, kappa_gamma, T_floor)` |
+
+Compatibility aliases are still accepted in code, but the names above are the recommended public API.
 
 Built-in fixed assumptions:
 - `nickel`: `E_Th_in=0`, `R_0=10 R_sun`
@@ -92,22 +102,31 @@ Built-in fixed assumptions:
 Key arguments:
 - `data`: `BolometricData`
 - `model`: model key
-- `ctx`: `Context`
+- `z` or `DL_cm`: distance input
 - `priors`: bounds specification
 - `fixed`: fixed parameter values
-- `sampler`: `"emcee"`, `"zeus"`, or `"dynesty"`
-- `sampler_kwargs`: sampler-specific config
-- `include_t_shift`: whether to include `t_shift` in fit
+- `sampler`: optional advanced choice, default is `"emcee"`
+- `sampler_kwargs`: optional advanced sampler config
+- `include_t_shift`: optional advanced flag
 
-Note:
-- The PDE grid settings are managed internally in the default workflow and are not exposed as standard user-facing fit parameters.
+Recommended standard usage:
+- use `tf.fit_bol(...)` for bolometric data
+- use `tf.fit_multiband(...)` for multi-band data
+- use standard model keys
+- use simple prior bounds `{"param": (lo, hi)}`
+- keep the default sampler unless you have a reason to change it
 
 ### `tf.fit_multiband(...)`
-Same interface, but `data` must be `MultiBandData` and `ctx.filters` is required.
+Key differences from `fit_bol(...)`:
+- `data` must be `MultiBandData`
+- `filters` is required
+- `y_kind` can be `"mag"` or `"flux"`
 
 ### Prior formats
-`priors` accepts mixed styles:
-- Linear uniform: `"M_ej": (1.0, 8.0)`
+Recommended:
+- `"M_ej": (1.0, 8.0)`
+
+Advanced formats still supported:
 - Log-uniform: `"M_Ni": ("log10", -3.0, -0.3)`
 - Dict style: `"kappa": {"bounds": (0.03, 0.3), "scale": "linear"}`
 
@@ -124,7 +143,7 @@ Typical `sampler_kwargs`:
 
 ## Result Object (`FitResult`)
 
-`fit_*` returns `FitResult` with:
+`fit_bol` / `fit_multiband` returns `FitResult` with:
 - `model`, `sampler`, `ctx`
 - `param_names`: sampled/free parameters
 - `all_param_names`: full parameter order
@@ -133,18 +152,18 @@ Typical `sampler_kwargs`:
 - `log_prob`: log posterior for each sample
 - `meta`: run metadata (bounds, priors, solver config, etc.)
 
-Convenience accessors:
-- `res.best_fit_params` / `res.best_params`
-- `res.best_log_prob`
-- `res.best_sample`
-- `res.best_fit` (compact dict with index, log_prob, params, sample)
+Recommended accessors:
+- `res.best_fit`
+- `res.best_params`
 - `res.median_params`
+
+Advanced accessors are also available if needed, such as `best_log_prob`, `best_sample`, and `best_theta`.
 
 ## Plotting
 
 - `tf.plot.corner(res)`
-- `tf.plot.fit_bol(res, data, show_1sigma=True)`
-- `tf.plot.fit_multiband(res, data, show_1sigma=True)`
+- `tf.plot.fit_bol(...)`
+- `tf.plot.fit_multiband(...)`
 
 Plot notes:
 - Fit plots default to no grid.
@@ -164,9 +183,6 @@ Loaded objects are plain dictionaries and can be passed directly to plotting fun
 import numpy as np
 import transfit as tf
 
-# Context
-ctx = tf.Context(distance=tf.Distance(z=0.001728))
-
 # Bolometric data
 a = np.loadtxt("examples/data/sn1993j_lbol.txt")
 t = a[:, 0] - a[:, 0].min()
@@ -176,7 +192,7 @@ data = tf.BolometricData(t_days=t, y=a[:, 1], yerr=a[:, 2])
 res = tf.fit_bol(
     data=data,
     model="sc_ni",
-    ctx=ctx,
+    z=0.001728,
     priors={
         "M_ej": (0.5, 8.0),
         "v_ej": (0.2, 3.0),
