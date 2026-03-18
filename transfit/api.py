@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import warnings
 from typing import Dict, List, Optional, Sequence, Literal, Any, Tuple
 
 import numpy as np
@@ -18,6 +19,12 @@ from transfit.constants import DAY
 # Context / Distance
 # -------------------------
 
+def _cosmo_luminosity_distance_cm(z: float) -> float:
+    from astropy.cosmology import Planck15 as cosmo
+    import astropy.units as u
+
+    return cosmo.luminosity_distance(float(z)).to(u.cm).value
+
 @dataclass(frozen=True)
 class Distance:
     z: Optional[float] = None
@@ -26,14 +33,28 @@ class Distance:
     def get_z(self) -> float:
         return float(self.z or 0.0)
 
+    def require_z(self) -> float:
+        if self.z is None:
+            raise ValueError("Redshift z is required for observer-frame multiband calculations.")
+        return float(self.z)
+
     def get_DL_cm(self) -> float:
         if self.DL_cm is not None:
-            return float(self.DL_cm)
+            dl = float(self.DL_cm)
+            if self.z is not None:
+                dl_cosmo = _cosmo_luminosity_distance_cm(float(self.z))
+                if np.isfinite(dl_cosmo) and dl_cosmo > 0.0:
+                    frac = abs(dl - dl_cosmo) / dl_cosmo
+                    if frac > 0.05:
+                        warnings.warn(
+                            "Using a user-supplied DL_cm that differs from the Planck15 luminosity distance "
+                            "implied by z by more than 5%. z is still used for time/frequency redshift terms.",
+                            stacklevel=2,
+                        )
+            return dl
         if self.z is None:
             raise ValueError("Distance needs either DL_cm or z.")
-        from astropy.cosmology import Planck15 as cosmo
-        import astropy.units as u
-        return cosmo.luminosity_distance(self.z).to(u.cm).value
+        return _cosmo_luminosity_distance_cm(float(self.z))
 
 
 @dataclass(frozen=True)
@@ -53,7 +74,6 @@ class Context:
 def _context_from_fit_inputs(
     *,
     z: Optional[float],
-    DL_cm: Optional[float],
     filters: Optional[Dict[str, float]],
     y_kind: Literal["mag", "flux"],
     require_filters: bool,
@@ -64,14 +84,14 @@ def _context_from_fit_inputs(
     Public fitting APIs accept direct scalar inputs instead of exposing
     Context/Distance as required user-facing concepts.
     """
-    if z is None and DL_cm is None:
-        raise ValueError("Provide one of `z` or `DL_cm`.")
+    if z is None:
+        raise ValueError("Provide `z` for fitting. The public fit API standardizes distance handling on redshift.")
     if require_filters and filters is None:
         raise ValueError(
             "filters is required for multiband fitting."
         )
     return Context(
-        distance=Distance(z=z, DL_cm=DL_cm),
+        distance=Distance(z=z),
         filters=filters,
         y_kind=str(y_kind),
     )
@@ -351,7 +371,7 @@ def lightcurve_multiband(
     theta = _normalize_theta(model, theta, allow_missing_tfloor=False)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
-    z = ctx.distance.get_z()
+    z = ctx.distance.require_z()
     DL_cm = ctx.distance.get_DL_cm()
     t_days = _t_grid_days_from_ts(t_s, z=z)
 
@@ -399,7 +419,7 @@ def predict_multiband(
     theta = _normalize_theta(model, theta, allow_missing_tfloor=False)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
-    z = ctx.distance.get_z()
+    z = ctx.distance.require_z()
     DL_cm = ctx.distance.get_DL_cm()
     t_grid_days = _t_grid_days_from_ts(t_s, z=z)
 
@@ -741,7 +761,6 @@ def fit_multiband(
     data: MultiBandData,
     model: str,
     z: Optional[float] = None,
-    DL_cm: Optional[float] = None,
     filters: Optional[Dict[str, float]] = None,
     y_kind: Literal["mag", "flux"] = "mag",
     priors: Optional[Dict[str, Any]] = None,
@@ -753,7 +772,6 @@ def fit_multiband(
 ) -> FitResult:
     ctx = _context_from_fit_inputs(
         z=z,
-        DL_cm=DL_cm,
         filters=filters,
         y_kind=y_kind,
         require_filters=True,
@@ -860,7 +878,6 @@ def fit_bol(
     data: BolometricData,
     model: str,
     z: Optional[float] = None,
-    DL_cm: Optional[float] = None,
     priors: Optional[Dict[str, Any]] = None,
     fixed: Optional[Dict[str, float]] = None,
     sampler: str = "emcee",
@@ -870,7 +887,6 @@ def fit_bol(
 ) -> FitResult:
     ctx = _context_from_fit_inputs(
         z=z,
-        DL_cm=DL_cm,
         filters=None,
         y_kind="mag",
         require_filters=False,

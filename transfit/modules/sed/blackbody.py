@@ -6,7 +6,7 @@ Blackbody SED mapping for gray-radiation models.
 Given Teff(t) and Rph(t), produce:
 - L_nu(nu_rest, t)  [erg/s/Hz]
 - F_nu at observer (requires DL_cm)
-- AB magnitude at observer (optional extra -2.5 log10(1+z) term to match project convention)
+- AB magnitude at observer
 
 This module intentionally contains NO cosmology; DL_cm must be provided by caller.
 """
@@ -66,14 +66,14 @@ class BlackbodySED:
         """
         Observer-frame flux density F_nu [erg/s/cm^2/Hz], shape (Nb, Nt).
 
-        Uses the project convention:
+        Uses the luminosity-distance convention:
           nu_rest = nu_obs * (1+z)
-          Fnu = Lnu / (4*pi*DL^2)
+          Fnu = (1+z) * Lnu / (4*pi*DL^2)
         """
         zp1 = 1.0 + (z or 0.0)
         nu_rest = np.asarray(nu_obs_hz, dtype=float) * zp1
         Lnu = self.lnu(nu_rest, Teff_K, R_cm)
-        Fnu = Lnu / (4.0 * PI * (DL_cm**2))
+        Fnu = (zp1 * Lnu) / (4.0 * PI * (DL_cm**2))
         return np.where(Fnu > 0.0, Fnu, np.nan)
 
     def abmag(
@@ -83,15 +83,11 @@ class BlackbodySED:
         R_cm: np.ndarray,
         DL_cm: float,
         z: float = 0.0,
-        include_minus2p5log1pz: bool = True,
     ) -> np.ndarray:
         """
         AB magnitude grid, shape (Nb, Nt):
-          mAB = -2.5 log10(Fnu) - 48.6 - 2.5 log10(1+z)  (optional)
+          mAB = -2.5 log10(Fnu) - 48.6
         """
-        zp1 = 1.0 + (z or 0.0)
         Fnu = self.fnu(nu_obs_hz, Teff_K, R_cm, DL_cm=DL_cm, z=z)
         mab = -2.5 * np.log10(Fnu) - 48.6
-        if include_minus2p5log1pz:
-            mab = mab - 2.5 * np.log10(zp1)
         return mab

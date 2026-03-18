@@ -29,7 +29,6 @@ It numerically solves the <strong>time-dependent radiative diffusion equation</s
 
 <p>Compared with traditional <strong>semi-analytical models</strong> (e.g., Arnett-like models), which rely on simplified and time-independent temperature structures, TransFit directly solves the diffusion equation. This allows the model to capture <strong>time-dependent temperature evolution, non-uniform heating distributions, and the transition from shock-cooling to radioactive-powered emission</strong>, while maintaining <strong>computational speeds comparable to semi-analytical approaches</strong>.</p>
 
-<p>By combining <strong>physical realism with efficient MCMC fitting</strong>, TransFit provides a practical tool for rapid light-curve modeling and parameter inference in the era of large time-domain surveys.</p>
 
 </td>
 </tr>
@@ -188,11 +187,6 @@ Recommended public model keys:
 | `sc_magnetar` | Shock-cooling + magnetar | `(M_ej, v_ej, E_Th_in, P_ms, B14, R_0, kappa, kappa_gamma, T_floor)` |
 
 Compatibility aliases are still accepted internally, but the names above are the recommended public API.
-
-Built-in fixed assumptions:
-- `nickel`: `E_Th_in=0`, `R_0=10 R_sun`
-- `magnetar`: `E_Th_in=0`, `R_0=1 R_sun`
-- `magnetar_ni`: `E_Th_in=0`, `R_0=1 R_sun`
 
 ### Parameter Glossary
 

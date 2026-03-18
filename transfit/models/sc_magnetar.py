@@ -308,9 +308,9 @@ class SCMagnetarModel:
         x_obs = H_PLANCK * nu_obs / (K_BOLTZ * T_for_calc)
         B_nu = 2.0 * H_PLANCK * nu_obs**3 / (C_LIGHT**2) / (np.exp(x_obs) - 1.0)
         L_nu = 4.0 * PI * PI * R_outer**2 * B_nu
-        F_nu = L_nu / (4.0 * PI * (DL_z**2))
+        F_nu = ((1.0 + z) * L_nu) / (4.0 * PI * (DL_z**2))
 
-        M_ab_values = -2.5 * np.log10(F_nu) - 48.6 - 2.5 * np.log10(1.0 + z)
+        M_ab_values = -2.5 * np.log10(F_nu) - 48.6
         M_ab_obs = np.interp(t_obs, t_obs_grid, M_ab_values, left=M_ab_values[0], right=M_ab_values[-1])
         return M_ab_obs
 
