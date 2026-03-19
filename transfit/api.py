@@ -19,6 +19,8 @@ from transfit.constants import DAY
 # Context / Distance
 # -------------------------
 
+_BOL_INTERNAL_T_FLOOR = 1000.0
+
 def _cosmo_luminosity_distance_cm(z: float) -> float:
     from astropy.cosmology import Planck15 as cosmo
     import astropy.units as u
@@ -223,7 +225,8 @@ def _get_engine(model: str):
 
 def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
     """
-    Allow omitting T_floor in forward-model calls by appending 0.0.
+    Allow omitting T_floor in forward-model calls by appending the internal
+    numerical floor used for bolometric-only evaluation.
     This keeps backward compatibility with shorter theta in examples.
     """
     m = str(model).lower().strip()
@@ -234,7 +237,7 @@ def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
         if len(theta_t) == expected - 1:
             if not allow_missing_tfloor:
                 raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (*theta_t, 1000.0)
+            return (*theta_t, _BOL_INTERNAL_T_FLOOR)
         if len(theta_t) != expected:
             raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
         return theta_t
@@ -244,7 +247,7 @@ def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
         if len(theta_t) == expected - 1:
             if not allow_missing_tfloor:
                 raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (*theta_t, 1000.0)
+            return (*theta_t, _BOL_INTERNAL_T_FLOOR)
         if len(theta_t) != expected:
             raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
         return theta_t
@@ -254,7 +257,7 @@ def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
         if len(theta_t) == expected - 1:
             if not allow_missing_tfloor:
                 raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (*theta_t, 1000.0)
+            return (*theta_t, _BOL_INTERNAL_T_FLOOR)
         if len(theta_t) != expected:
             raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
         return theta_t
@@ -264,7 +267,7 @@ def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
         if len(theta_t) == expected - 1:
             if not allow_missing_tfloor:
                 raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (*theta_t, 1000.0)
+            return (*theta_t, _BOL_INTERNAL_T_FLOOR)
         if len(theta_t) != expected:
             raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
         return theta_t
@@ -274,7 +277,7 @@ def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
         if len(theta_t) == expected - 1:
             if not allow_missing_tfloor:
                 raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (*theta_t, 1000.0)
+            return (*theta_t, _BOL_INTERNAL_T_FLOOR)
         if len(theta_t) != expected:
             raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
         return theta_t
@@ -768,7 +771,6 @@ def fit_multiband(
     sampler: str = "emcee",
     sampler_kwargs: Optional[Dict[str, Any]] = None,
     model_kwargs: Optional[Dict[str, Any]] = None,
-    include_t_shift: bool = True,
 ) -> FitResult:
     ctx = _context_from_fit_inputs(
         z=z,
@@ -796,7 +798,7 @@ def fit_multiband(
 
     # ---- bounds/prior ----
     priors_lin, priors_log10 = _split_prior_specs(priors)
-    names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=include_t_shift)
+    names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=True)
     bounds_all, log_set_all = _apply_log10_priors(names_all, bounds_all, priors_log10)
     names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
     log_flags_samp = [n in log_set_all for n in names_samp]
@@ -854,7 +856,6 @@ def fit_multiband(
             priors_linear=dict(priors_lin or {}),
             priors_log10=dict(priors_log10 or {}),
             log_prior_names=sorted([n for n in names_samp if n in log_set_all]),
-            include_t_shift=include_t_shift,
             interp_fill_fit=interp_fill_fit,
             model_kwargs=model_kwargs_pred,
         )
@@ -883,8 +884,18 @@ def fit_bol(
     sampler: str = "emcee",
     sampler_kwargs: Optional[Dict[str, Any]] = None,
     model_kwargs: Optional[Dict[str, Any]] = None,
-    include_t_shift: bool = True,
 ) -> FitResult:
+    if priors and "T_floor" in priors:
+        raise ValueError(
+            f"`T_floor` is not a bolometric fit parameter in `fit_bol()`. "
+            f"TransFit keeps an internal temperature floor of {_BOL_INTERNAL_T_FLOOR:.0f} K only for numerical stability."
+        )
+    if fixed and "T_floor" in fixed:
+        raise ValueError(
+            f"`T_floor` is not a bolometric fit parameter in `fit_bol()`. "
+            f"TransFit keeps an internal temperature floor of {_BOL_INTERNAL_T_FLOOR:.0f} K only for numerical stability."
+        )
+
     ctx = _context_from_fit_inputs(
         z=z,
         filters=None,
@@ -905,9 +916,9 @@ def fit_bol(
         raise ValueError("data.y and data.yerr must be finite and yerr > 0.")
 
     priors_lin, priors_log10 = _split_prior_specs(priors)
-    names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=include_t_shift)
+    names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=True)
     bounds_all, log_set_all = _apply_log10_priors(names_all, bounds_all, priors_log10)
-    # For bolometric fitting, T_floor is excluded from priors and sampling.
+    # For bolometric fitting, T_floor stays internal and is not part of the fit state.
     if "T_floor" in names_all:
         i_tf = names_all.index("T_floor")
         names_all = [n for n in names_all if n != "T_floor"]
@@ -917,7 +928,6 @@ def fit_bol(
             log_set_all.remove("T_floor")
 
     fixed = dict(fixed or {})
-    fixed.pop("T_floor", None)
 
     names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
     log_flags_samp = [n in log_set_all for n in names_samp]
@@ -966,9 +976,9 @@ def fit_bol(
             priors_linear=dict(priors_lin or {}),
             priors_log10=dict(priors_log10 or {}),
             log_prior_names=sorted([n for n in names_samp if n in log_set_all]),
-            include_t_shift=include_t_shift,
             interp_fill_fit=interp_fill_fit,
             model_kwargs=model_kwargs_pred,
+            internal_t_floor=_BOL_INTERNAL_T_FLOOR,
         )
     )
 

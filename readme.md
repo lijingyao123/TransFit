@@ -70,6 +70,8 @@ Rules:
 - all arrays must have matching lengths
 - `yerr` must be finite and positive
 - `mask` is optional and will be respected automatically during fitting
+- `t_days` should be observer-frame days relative to a reference epoch; convert raw `JD`/`MJD` first
+- `fit_bol(...)` does not fit `T_floor`; an internal `1000 K` floor is kept only for numerical stability
 
 ### 2. Fit a bolometric light curve
 
@@ -208,6 +210,7 @@ Compatibility aliases are still accepted internally, but the names above are the
 `t_shift` convention in fitting:
 - likelihood is evaluated as `model(t_obs + t_shift)`
 - positive `t_shift` shifts the model curve to earlier observed times
+- if you do not want to fit `t_shift`, fix it with `fixed={"t_shift": 0.0}`
 
 ## Priors and Samplers
 
@@ -259,6 +262,7 @@ The package also provides forward-model helpers for users who want custom predic
 - `predict_multiband(...)`
 
 These helpers use internal forward-model context objects and are not required for standard fitting workflows.
+All public-facing time inputs are still interpreted as observer-frame days, even though the internal solver evolves in CGS units with seconds.
 
 ## Tutorial Notebook
 

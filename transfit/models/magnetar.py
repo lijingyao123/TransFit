@@ -5,6 +5,7 @@ import numpy as np
 import numba
 from astropy.cosmology import Planck15 as cosmo
 import astropy.units as u
+from transfit.modules.interp import interp_fit
 
 from transfit.constants import (
     PI, C_LIGHT, DAY,
@@ -229,8 +230,15 @@ class MagnetarModel:
 
     def L_bol(self, t_obs, theta, z=0.0, **kwargs):
         t_s, L_series, _, _ = self.calculate_light_curve(theta, **kwargs)
-        t_obs_grid = t_s * (1.0 + z)
-        return np.interp(t_obs, t_obs_grid, L_series, left=L_series[0], right=L_series[-1])
+        t_obs_days = np.asarray(t_obs, float)
+        t_obs_grid_days = (t_s * (1.0 + z)) / DAY
+        return interp_fit(
+            t_obs_grid_days,
+            np.asarray(L_series, float),
+            t_obs_days,
+            yscale="log10",
+            fill="edge",
+        )
 
     def M_ab(self, t_obs, theta, nu_obs, z, **kwargs):
         nu_obs = nu_obs * (1.0 + z)
@@ -238,7 +246,8 @@ class MagnetarModel:
         DL_z = lum_dist.to(u.cm).value
 
         t_s, _, T_for_calc, R_outer = self.calculate_light_curve(theta, **kwargs)
-        t_obs_grid = t_s * (1.0 + z)
+        t_obs_days = np.asarray(t_obs, float)
+        t_obs_grid_days = (t_s * (1.0 + z)) / DAY
 
         x_obs = H_PLANCK * nu_obs / (K_BOLTZ * T_for_calc)
         B_nu = 2.0 * H_PLANCK * nu_obs**3 / (C_LIGHT**2) / (np.exp(x_obs) - 1.0)
@@ -246,4 +255,4 @@ class MagnetarModel:
         F_nu = ((1.0 + z) * L_nu) / (4.0 * PI * (DL_z**2))
 
         M_ab_values = -2.5 * np.log10(F_nu) - 48.6
-        return np.interp(t_obs, t_obs_grid, M_ab_values, left=M_ab_values[0], right=M_ab_values[-1])
+        return np.interp(t_obs_days, t_obs_grid_days, M_ab_values, left=M_ab_values[0], right=M_ab_values[-1])
