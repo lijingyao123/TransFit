@@ -20,7 +20,7 @@
 <p>
   <a href="examples/tutorial.ipynb">Tutorial Notebook</a> |
   <a href="examples/data">Example Data</a> |
-  <a href="#how-to-use">Quick Start</a> |
+  <a href="#usage">Usage</a> |
   <a href="https://doi.org/10.3847/1538-4357/adfed6">Paper</a>
 </p>
 
@@ -29,35 +29,42 @@ It numerically solves the <strong>time-dependent radiative diffusion equation</s
 
 <p>Compared with traditional <strong>semi-analytical models</strong> (e.g., Arnett-like models), which rely on simplified and time-independent temperature structures, TransFit directly solves the diffusion equation. This allows the model to capture <strong>time-dependent temperature evolution, non-uniform heating distributions, and the transition from shock-cooling to radioactive-powered emission</strong>, while maintaining <strong>computational speeds comparable to semi-analytical approaches</strong>.</p>
 
+<p>By combining <strong>physical realism with efficient MCMC fitting</strong>, TransFit provides a practical tool for rapid light-curve modeling and parameter inference in the era of large time-domain surveys.</p>
 
 </td>
 </tr>
 </table>
 
-## Advantages
+## Features
 
-- Physically motivated: directly solves the time-dependent diffusion equation instead of relying on static semi-analytical approximations.
-- Fast for fitting: designed for efficient Bayesian inference with MCMC backends such as `emcee`, `zeus`, and `dynesty`.
-- Built for common workflows: supports both bolometric light-curve fitting and multi-band light-curve fitting.
-- Simple public API: most users only need `tf.BolometricData(...)` or `tf.MultiBandData(...)`, plus `tf.fit_bol(...)` or `tf.fit_multiband(...)`.
-- Practical output tools: includes fit plotting, corner plotting, and save/load helpers for standard analysis workflows.
+- Physically motivated light-curve fitting based on the time-dependent radiative diffusion equation.
+- Supports both `bolometric` and `multi-band` transient light-curve fitting.
+- Fast Bayesian inference with MCMC samplers such as `emcee`, `zeus`, and `dynesty`.
+- Simple public workflow centered on `tf.BolometricData(...)`, `tf.MultiBandData(...)`, `tf.fit_bol(...)`, and `tf.fit_multiband(...)`.
+- Built-in result inspection, fit plotting, corner plotting, and save/load helpers.
+- Internal solver runs in CGS units, while the public time interface uses observer-frame days for easier scientific use.
 
-## How To Use
+## Installation
 
-Run from the repository root so `import transfit` works directly.
+TransFit currently runs from source. After cloning the repository, use it from the repository root so that `import transfit` works directly.
 
-Main dependencies:
+Requirements:
+- Python `3.10+`
 - `numpy`
 - `matplotlib`
 - `pandas`
 - `numba`
 - `astropy`
 
-Optional dependencies:
+Optional packages:
 - `corner` for posterior corner plots
 - `emcee`, `zeus`, `dynesty` for fitting backends
 
-Optional sampler backends are imported lazily, so `import transfit` does not require all sampler packages to be installed.
+Notes:
+- Optional sampler backends are imported lazily, so `import transfit` does not require all sampler packages to be installed.
+- Public fitting APIs use `z` directly; for standard workflows you do not need to construct internal context objects manually.
+
+## Usage
 
 ### 1. Prepare your data
 
@@ -69,8 +76,8 @@ Choose the data container that matches your observations:
 Rules:
 - all arrays must have matching lengths
 - `yerr` must be finite and positive
-- `mask` is optional and will be respected automatically during fitting
-- `t_days` should be observer-frame days relative to a reference epoch; convert raw `JD`/`MJD` first
+- `mask` is optional and is applied automatically during fitting
+- `t_days` should be observer-frame days relative to a reference epoch; convert raw `JD` or `MJD` first
 - `fit_bol(...)` does not fit `T_floor`; an internal `1000 K` floor is kept only for numerical stability
 
 ### 2. Fit a bolometric light curve
@@ -111,6 +118,7 @@ res = tf.fit_bol(
         burnin=200,
         thin=5,
         seed=123,
+        progress=True,
     ),
 )
 ```
@@ -151,17 +159,15 @@ res = tf.fit_multiband(
 )
 ```
 
-### 4. Read, plot, and save the result
+### 4. Inspect, plot, and save the result
 
-`fit_bol(...)` and `fit_multiband(...)` return `FitResult`.
+`fit_bol(...)` and `fit_multiband(...)` return a `FitResult`.
 
 Most useful accessors:
 - `res.best_fit`
 - `res.best_params`
 - `res.median_params`
 - `res.best_log_prob`
-
-Common follow-up operations:
 
 ```python
 print(res.best_fit)
@@ -176,7 +182,7 @@ path = tf.save(res, path="mcmc_out/fit_demo.npz")
 loaded = tf.load(path)
 ```
 
-## Models
+### 5. Models and parameters
 
 Recommended public model keys:
 
@@ -190,7 +196,7 @@ Recommended public model keys:
 
 Compatibility aliases are still accepted internally, but the names above are the recommended public API.
 
-### Parameter Glossary
+Parameter glossary:
 
 | Parameter | Meaning | Unit |
 |---|---|---|
@@ -212,11 +218,9 @@ Compatibility aliases are still accepted internally, but the names above are the
 - positive `t_shift` shifts the model curve to earlier observed times
 - if you do not want to fit `t_shift`, fix it with `fixed={"t_shift": 0.0}`
 
-## Priors and Samplers
+### 6. Priors and samplers
 
-### Recommended prior style
-
-Use simple bounds when possible:
+Recommended prior style:
 
 ```python
 priors = {
@@ -229,44 +233,33 @@ Advanced prior styles are also supported:
 - log-uniform: `"M_Ni": ("log10", -3.0, -0.3)`
 - dict style: `"kappa": {"bounds": (0.03, 0.3), "scale": "linear"}`
 
-### Supported samplers
-
+Supported samplers:
 - `emcee`
 - `zeus`
 - `dynesty`
 
 Typical `sampler_kwargs`:
-- `emcee` / `zeus`: `nwalkers`, `nsteps`, `burnin`, `thin`, `seed`, `progress`
+- `emcee` or `zeus`: `nwalkers`, `nsteps`, `burnin`, `thin`, `seed`, `progress`
 - `dynesty`: `nlive`, `sample`, `bound`, `dlogz`, `maxiter`, `maxcall`, `seed`, `progress`, `nsamples`
 
 For most users, `emcee` is the simplest default choice.
 
-## Plotting
+### 7. More examples
 
 Standard plotting helpers:
 - `tf.plot.fit_bol(...)`
 - `tf.plot.fit_multiband(...)`
 - `tf.plot.corner(...)`
 
-Notes:
-- fit plots default to no grid
-- `show_1sigma=True` draws the posterior 16%-84% band
-- corner labels include units and LaTeX formatting
-
-## Advanced Usage
-
-The package also provides forward-model helpers for users who want custom prediction or custom plotting workflows:
+Forward-model helpers for advanced workflows:
 - `lightcurve_bol(...)`
 - `lightcurve_multiband(...)`
 - `predict_bol(...)`
 - `predict_multiband(...)`
 
-These helpers use internal forward-model context objects and are not required for standard fitting workflows.
-All public-facing time inputs are still interpreted as observer-frame days, even though the internal solver evolves in CGS units with seconds.
-
-## Tutorial Notebook
-
+Additional resources:
 - `examples/tutorial.ipynb`
+- `examples/data`
 
 ## Contact
 
