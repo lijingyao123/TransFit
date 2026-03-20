@@ -281,36 +281,7 @@ path = tf.save(res, path="mcmc_out/fit_demo.npz")
 loaded = tf.load(path)
 ```
 
-#### Models, parameters, priors, and samplers
-
-Recommended public model keys:
-
-| Model key | Physical meaning | Parameter order (`theta`) |
-|---|---|---|
-| `nickel` | Ni-powered model | `(M_ej, v_ej, M_Ni, x_Ni, kappa, kappa_gamma, T_floor)` |
-| `sc_ni` | Shock-cooling + Ni | `(M_ej, v_ej, E_Th_in, M_Ni, R_0, x_Ni, kappa, kappa_gamma, T_floor)` |
-| `magnetar` | Pure magnetar | `(M_ej, v_ej, P_ms, B14, kappa, kappa_gamma, T_floor)` |
-| `magnetar_ni` | Magnetar + Ni | `(M_ej, v_ej, P_ms, B14, M_Ni, kappa, kappa_gamma, T_floor)` |
-| `sc_magnetar` | Shock-cooling + magnetar | `(M_ej, v_ej, E_Th_in, P_ms, B14, R_0, kappa, kappa_gamma, T_floor)` |
-
-Compatibility aliases are still accepted internally, but the names above are the recommended public API.
-
-Parameter glossary:
-
-| Parameter | Meaning | Unit |
-|---|---|---|
-| `M_ej` | Ejecta mass | `M_sun` |
-| `v_ej` | Characteristic ejecta velocity | `1e9 cm s^-1` |
-| `M_Ni` | Nickel-56 mass | `M_sun` |
-| `E_Th_in` | Initial thermal energy scale | `1e49 erg` |
-| `R_0` | Initial outer-radius scale | `R_sun` |
-| `x_Ni` | Heating radius fraction | dimensionless `[0,1]` |
-| `kappa` | Optical opacity | `cm^2 g^-1` |
-| `kappa_gamma` | Gamma-ray opacity | `cm^2 g^-1` |
-| `P_ms` | Magnetar initial spin period | `ms` |
-| `B14` | Magnetar magnetic field scale | `1e14 G` |
-| `T_floor` | Temperature floor for photosphere | `K` |
-| `t_shift` | Time offset between model and observed timeline | `day` |
+#### Priors and samplers
 
 `t_shift` convention in fitting:
 - likelihood is evaluated as `model(t_obs + t_shift)`
