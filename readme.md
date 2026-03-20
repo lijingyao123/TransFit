@@ -69,7 +69,7 @@ Notes:
 ## Usage
 
 
-### 1. How to draw a light curve
+### Light Curve Calculation
 
 You can either generate a theoretical light curve directly from model parameters or plot a fitted result.
 
@@ -111,6 +111,9 @@ ax.set_yscale("log")
 ax.set_xlabel("Observer time (days)")
 ax.set_ylabel("Bolometric luminosity (erg s$^{-1}$)")
 ```
+<p align="center">
+  <img src="docs/lightcurve_bol.png" width="47%" alt="Example bolometric light curve">
+</p>
 
 #### Draw a multi-band light curve directly
 
@@ -156,7 +159,6 @@ ax.legend()
 
 <p align="center">
   <img src="docs/lightcurve_bol.png" width="47%" alt="Example bolometric light curve">
-  <img src="docs/lightcurve_multiband.png" width="47%" alt="Example multi-band light curve">
 </p>
 
 #### Plot a fitted result
