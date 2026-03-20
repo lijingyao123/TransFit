@@ -1,9 +1,9 @@
 from importlib import import_module
 
 from .api import (
-    Distance, Context,
     BolometricLC, MultiBandLC,
     BolometricData, MultiBandData,
+    model_param_names, param_template,
     lightcurve_bol, lightcurve_multiband,
     predict_bol, predict_multiband,
     fit_bol, fit_multiband,
@@ -20,6 +20,9 @@ def __getattr__(name):
 
 __all__ = [
     "BolometricData", "MultiBandData",
+    "model_param_names", "param_template",
+    "lightcurve_bol", "lightcurve_multiband",
+    "predict_bol", "predict_multiband",
     "fit_bol", "fit_multiband",
     "save", "load", "default_outpath",
     "plot",

@@ -144,19 +144,16 @@ def _to_loaded(res: Union[Dict[str, Any], Any]) -> Dict[str, Any]:
     )
 
 
-def _make_ctx_from_dict(ctx_dict: Dict[str, Any]):
-    """Lazy import Context/Distance to avoid circular import."""
-    from ..api import Context, Distance
-
+def _forward_inputs_from_ctx_dict(ctx_dict: Dict[str, Any]) -> Tuple[Optional[float], Dict[str, float], str]:
     ctx_dict = dict(ctx_dict or {})
     dist = dict(ctx_dict.get("distance", {}) or {})
-    distance = Distance(z=dist.get("z", None), DL_cm=dist.get("DL_cm", None))
-
+    z = dist.get("z", None)
+    if z is not None:
+        z = float(z)
     filters = dict(ctx_dict.get("filters", {}) or {})
     filters = {str(k): float(v) for k, v in filters.items()}
-
     y_kind = str(ctx_dict.get("y_kind", "mag"))
-    return Context(distance=distance, filters=filters, y_kind=y_kind)
+    return z, filters, y_kind
 
 
 def _get_model_name(loaded: Dict[str, Any], fallback: Optional[str] = None) -> str:
@@ -402,11 +399,11 @@ def fit_bol(
 
     ctx_dict = loaded.get("ctx", {}) or {}
     if ctx_dict:
-        ctx = _make_ctx_from_dict(ctx_dict)
+        z, _, y_kind = _forward_inputs_from_ctx_dict(ctx_dict)
     else:
-        raise ValueError("ctx is required (not found in loaded result).")
+        raise ValueError("Stored forward metadata is required (not found in loaded result).")
 
-    y_kind = str(getattr(ctx, "y_kind", "mag")).lower()  # usually irrelevant for bol, but keep for label
+    y_kind = str(y_kind).lower()  # usually irrelevant for bol, but keep for label
 
     model_name = _get_model_name(loaded, fallback=model)
 
@@ -446,7 +443,7 @@ def fit_bol(
         y_line = predict_bol(
             model=model_name,
             theta=theta_0,
-            ctx=ctx,
+            z=z,
             t_days=t_model_plot,
             interp_fill=interp_fill_model,
             **model_kwargs_eval,
@@ -490,7 +487,7 @@ def fit_bol(
                     yj[valid] = predict_bol(
                         model=model_name,
                         theta=theta_j,
-                        ctx=ctx,
+                        z=z,
                         t_days=t_eval[valid],
                         interp_fill=interp_fill_model,
                         **model_kwargs_eval,
@@ -566,11 +563,11 @@ def fit_multiband(
 
     ctx_dict = loaded.get("ctx", {}) or {}
     if ctx_dict:
-        ctx = _make_ctx_from_dict(ctx_dict)
+        z, filters, y_kind = _forward_inputs_from_ctx_dict(ctx_dict)
     else:
-        raise ValueError("ctx is required (not found in loaded result).")
+        raise ValueError("Stored forward metadata is required (not found in loaded result).")
 
-    y_kind = str(getattr(ctx, "y_kind", "mag")).lower()
+    y_kind = str(y_kind).lower()
     model_name = _get_model_name(loaded, fallback=model)
 
     samples = np.asarray(loaded["samples"], float)
@@ -625,9 +622,11 @@ def fit_multiband(
             y_line = predict_multiband(
                 model=model_name,
                 theta=theta_0,
-                ctx=ctx,
+                z=z,
+                filters=filters,
                 t_days=t_model_plot,
                 band=np.array([b] * len(t_plot), dtype=object),
+                y_kind=y_kind,
                 interp_fill=interp_fill_model,
                 **model_kwargs_eval,
             )
@@ -652,9 +651,11 @@ def fit_multiband(
                         yj[valid] = predict_multiband(
                             model=model_name,
                             theta=theta_j,
-                            ctx=ctx,
+                            z=z,
+                            filters=filters,
                             t_days=t_eval[valid],
                             band=np.array([b] * int(np.sum(valid)), dtype=object),
+                            y_kind=y_kind,
                             interp_fill=interp_fill_model,
                             **model_kwargs_eval,
                         )

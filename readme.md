@@ -41,6 +41,7 @@ It numerically solves the <strong>time-dependent radiative diffusion equation</s
 - Supports both `bolometric` and `multi-band` transient light-curve fitting.
 - Fast Bayesian inference with MCMC samplers such as `emcee`, `zeus`, and `dynesty`.
 - Simple public workflow centered on `tf.BolometricData(...)`, `tf.MultiBandData(...)`, `tf.fit_bol(...)`, and `tf.fit_multiband(...)`.
+- Direct forward-model helpers accept named `params={...}` dictionaries instead of opaque parameter tuples.
 - Built-in result inspection, fit plotting, corner plotting, and save/load helpers.
 - Internal solver runs in CGS units, while the public time interface uses observer-frame days for easier scientific use.
 
@@ -62,11 +63,124 @@ Optional packages:
 
 Notes:
 - Optional sampler backends are imported lazily, so `import transfit` does not require all sampler packages to be installed.
-- Public fitting APIs use `z` directly; for standard workflows you do not need to construct internal context objects manually.
+- Public fitting APIs use `z` directly.
+- Public forward-model helpers also use direct inputs such as `z` and `filters`.
 
 ## Usage
 
-### 1. Prepare your data
+
+### 1. How to draw a light curve
+
+You can either generate a theoretical light curve directly from model parameters or plot a fitted result.
+
+If you are unsure about the required parameter names for a model:
+
+```python
+tf.model_param_names("sc_ni")
+tf.param_template("sc_ni")
+```
+
+#### Draw a bolometric light curve directly
+
+```python
+import matplotlib.pyplot as plt
+import transfit as tf
+
+params_scni = {
+    "M_ej": 3.0,
+    "v_ej": 1.0,
+    "E_Th_in": 1.5,
+    "M_Ni": 0.08,
+    "R_0": 120.0,
+    "x_Ni": 0.2,
+    "kappa": 0.12,
+    "kappa_gamma": 0.03,
+    "T_floor": 4500.0,
+}
+
+bol = tf.lightcurve_bol(
+    model="sc_ni",
+    params=params_scni,
+    z=0.001728,
+    t_max_days=180.0,
+)
+
+fig, ax = plt.subplots()
+ax.plot(bol.t_days, bol.Lbol)
+ax.set_yscale("log")
+ax.set_xlabel("Observer time (days)")
+ax.set_ylabel("Bolometric luminosity (erg s$^{-1}$)")
+```
+
+#### Draw a multi-band light curve directly
+
+```python
+import matplotlib.pyplot as plt
+import transfit as tf
+
+filters = {
+    "B": 6.8e14,
+    "V": 5.5e14,
+    "R": 4.7e14,
+    "I": 3.9e14,
+}
+
+params_ni = {
+    "M_ej": 3.0,
+    "v_ej": 1.0,
+    "M_Ni": 0.08,
+    "x_Ni": 0.2,
+    "kappa": 0.12,
+    "kappa_gamma": 0.03,
+    "T_floor": 3000.0,
+}
+
+mb = tf.lightcurve_multiband(
+    model="nickel",
+    params=params_ni,
+    z=0.001728,
+    filters=filters,
+    bands=["B", "V", "R", "I"],
+    y_kind="mag",
+    t_max_days=180.0,
+)
+
+fig, ax = plt.subplots()
+for b in mb.bands:
+    ax.plot(mb.t_days, mb.y[b], label=b)
+ax.invert_yaxis()
+ax.set_xlabel("Observer time (days)")
+ax.set_ylabel("AB magnitude")
+ax.legend()
+```
+
+<p align="center">
+  <img src="docs/lightcurve_bol.png" width="47%" alt="Example bolometric light curve">
+  <img src="docs/lightcurve_multiband.png" width="47%" alt="Example multi-band light curve">
+</p>
+
+#### Plot a fitted result
+
+```python
+fig_bol = tf.plot.fit_bol(res_bol, data=data_bol, show_1sigma=True)
+fig_mb = tf.plot.fit_multiband(res_mb, data=data_mb, show_1sigma=True)
+```
+
+#### Plot the posterior corner
+
+```python
+corner_fig = tf.plot.corner(res)
+```
+
+Common result accessors:
+- `res.best_fit`
+- `res.best_params`
+- `res.median_params`
+- `res.best_log_prob`
+
+### 2. How to fit data
+
+#### Prepare the data
 
 Choose the data container that matches your observations:
 
@@ -77,10 +191,9 @@ Rules:
 - all arrays must have matching lengths
 - `yerr` must be finite and positive
 - `mask` is optional and is applied automatically during fitting
-- `t_days` should be observer-frame days relative to a reference epoch; convert raw `JD` or `MJD` first
 - `fit_bol(...)` does not fit `T_floor`; an internal `1000 K` floor is kept only for numerical stability
 
-### 2. Fit a bolometric light curve
+#### Fit a bolometric light curve
 
 ```python
 import numpy as np
@@ -123,7 +236,7 @@ res = tf.fit_bol(
 )
 ```
 
-### 3. Fit a multi-band light curve
+#### Fit a multi-band light curve
 
 ```python
 import transfit as tf
@@ -159,30 +272,14 @@ res = tf.fit_multiband(
 )
 ```
 
-### 4. Inspect, plot, and save the result
-
-`fit_bol(...)` and `fit_multiband(...)` return a `FitResult`.
-
-Most useful accessors:
-- `res.best_fit`
-- `res.best_params`
-- `res.median_params`
-- `res.best_log_prob`
+#### Save and reload the result
 
 ```python
-print(res.best_fit)
-
-fig = tf.plot.fit_bol(res, data=data, show_1sigma=True)
-# or
-fig = tf.plot.fit_multiband(res, data=data, show_1sigma=True)
-
-corner_fig = tf.plot.corner(res)
-
 path = tf.save(res, path="mcmc_out/fit_demo.npz")
 loaded = tf.load(path)
 ```
 
-### 5. Models and parameters
+#### Models, parameters, priors, and samplers
 
 Recommended public model keys:
 
@@ -218,8 +315,6 @@ Parameter glossary:
 - positive `t_shift` shifts the model curve to earlier observed times
 - if you do not want to fit `t_shift`, fix it with `fixed={"t_shift": 0.0}`
 
-### 6. Priors and samplers
-
 Recommended prior style:
 
 ```python
@@ -244,20 +339,7 @@ Typical `sampler_kwargs`:
 
 For most users, `emcee` is the simplest default choice.
 
-### 7. More examples
-
-Standard plotting helpers:
-- `tf.plot.fit_bol(...)`
-- `tf.plot.fit_multiband(...)`
-- `tf.plot.corner(...)`
-
-Forward-model helpers for advanced workflows:
-- `lightcurve_bol(...)`
-- `lightcurve_multiband(...)`
-- `predict_bol(...)`
-- `predict_multiband(...)`
-
-Additional resources:
+More examples:
 - `examples/tutorial.ipynb`
 - `examples/data`
 

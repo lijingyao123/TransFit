@@ -16,7 +16,7 @@ from transfit.constants import DAY
 
 
 # -------------------------
-# Context / Distance
+# Internal forward metadata
 # -------------------------
 
 _BOL_INTERNAL_T_FLOOR = 1000.0
@@ -28,7 +28,7 @@ def _cosmo_luminosity_distance_cm(z: float) -> float:
     return cosmo.luminosity_distance(float(z)).to(u.cm).value
 
 @dataclass(frozen=True)
-class Distance:
+class _Distance:
     z: Optional[float] = None
     DL_cm: Optional[float] = None
 
@@ -60,7 +60,7 @@ class Distance:
 
 
 @dataclass(frozen=True)
-class Context:
+class _Context:
     """
     Internal context for forward-model evaluation.
 
@@ -68,7 +68,7 @@ class Context:
     - Multi-band prediction: filters is required,
       y_kind defaults to "mag".
     """
-    distance: Distance
+    distance: _Distance
     filters: Optional[Dict[str, float]] = None        # band -> nu_eff (Hz), only for multiband
     y_kind: Literal["mag", "flux"] = "mag"            # only matters for multiband
 
@@ -79,7 +79,7 @@ def _context_from_fit_inputs(
     filters: Optional[Dict[str, float]],
     y_kind: Literal["mag", "flux"],
     require_filters: bool,
-) -> Context:
+) -> _Context:
     """
     Build the internal Context used by fitting.
 
@@ -92,8 +92,33 @@ def _context_from_fit_inputs(
         raise ValueError(
             "filters is required for multiband fitting."
         )
-    return Context(
-        distance=Distance(z=z),
+    return _Context(
+        distance=_Distance(z=z),
+        filters=filters,
+        y_kind=str(y_kind),
+    )
+
+
+def _context_from_forward_inputs(
+    *,
+    z: Optional[float],
+    filters: Optional[Dict[str, float]],
+    y_kind: Literal["mag", "flux"],
+    require_filters: bool,
+    require_z: bool,
+) -> _Context:
+    """
+    Build internal forward metadata for public prediction/lightcurve helpers.
+
+    Public forward APIs accept direct scalar inputs instead of requiring
+    Context/Distance objects from users.
+    """
+    if require_z and z is None:
+        raise ValueError("Provide `z` for multiband forward calculations.")
+    if require_filters and filters is None:
+        raise ValueError("filters is required for multiband forward calculations.")
+    return _Context(
+        distance=_Distance(z=0.0 if z is None else z),
         filters=filters,
         y_kind=str(y_kind),
     )
@@ -145,7 +170,7 @@ def _require_bands_in_filters(bands: Sequence[str], filters: Dict[str, float]) -
     missing = [b for b in bands if b not in filters]
     if missing:
         raise KeyError(
-            f"These bands are missing in ctx.filters (case-sensitive): {missing}. "
+            f"These bands are missing in filters (case-sensitive): {missing}. "
             f"Available: {sorted(filters.keys())}"
         )
 
@@ -285,6 +310,70 @@ def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
     return theta_t
 
 
+def model_param_names(model: str, *, include_t_shift: bool = False) -> List[str]:
+    names, _ = build_bounds(model, include_t_shift=include_t_shift)
+    return list(names)
+
+
+def param_template(
+    model: str,
+    *,
+    include_t_shift: bool = False,
+    fill_value: Any = None,
+) -> Dict[str, Any]:
+    return {name: fill_value for name in model_param_names(model, include_t_shift=include_t_shift)}
+
+
+def _theta_from_params(
+    model: str,
+    params: Dict[str, Any],
+    *,
+    allow_missing_tfloor: bool,
+):
+    if not isinstance(params, dict):
+        raise TypeError("params must be a dict mapping parameter names to values.")
+
+    values = dict(params)
+    # Allow direct reuse of res.best_params / res.median_params in forward helpers.
+    values.pop("t_shift", None)
+
+    names = model_param_names(model, include_t_shift=False)
+    unknown = sorted(set(values) - set(names))
+    if unknown:
+        raise KeyError(f"Unknown parameter(s) for model='{model}': {unknown}. Allowed: {names}")
+
+    missing = [
+        n for n in names
+        if n not in values and not (allow_missing_tfloor and n == "T_floor")
+    ]
+    if missing:
+        raise KeyError(f"Missing parameter(s) for model='{model}': {missing}. Required: {names}")
+
+    theta = []
+    for n in names:
+        if n == "T_floor" and n not in values and allow_missing_tfloor:
+            theta.append(_BOL_INTERNAL_T_FLOOR)
+        else:
+            theta.append(float(values[n]))
+    return tuple(theta)
+
+
+def _resolve_forward_theta(
+    model: str,
+    *,
+    params: Optional[Dict[str, Any]],
+    theta,
+    allow_missing_tfloor: bool,
+):
+    if params is not None and theta is not None:
+        raise ValueError("Provide either `params` or `theta`, not both.")
+    if params is not None:
+        return _theta_from_params(model, params, allow_missing_tfloor=allow_missing_tfloor)
+    if theta is not None:
+        return _normalize_theta(model, theta, allow_missing_tfloor=allow_missing_tfloor)
+    raise ValueError("Provide `params` for forward-model evaluation.")
+
+
 def _solve_state(engine, theta, *, Nx: int, Ny: int, t_max_days: float):
     return engine.calculate_light_curve(theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
@@ -301,14 +390,22 @@ def _t_grid_days_from_ts(t_s: np.ndarray, z: float) -> np.ndarray:
 def lightcurve_bol(
     *,
     model: str,
-    theta,
-    ctx: Context,
+    params: Optional[Dict[str, Any]] = None,
+    theta=None,
+    z: Optional[float] = None,
     Nx: int = 100,
     Ny: int = 1000,
     t_max_days: float = 150.0,
 ) -> BolometricLC:
+    ctx = _context_from_forward_inputs(
+        z=z,
+        filters=None,
+        y_kind="mag",
+        require_filters=False,
+        require_z=False,
+    )
     engine = _get_engine(model)
-    theta = _normalize_theta(model, theta, allow_missing_tfloor=True)
+    theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=True)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
     z = ctx.distance.get_z()
@@ -324,16 +421,24 @@ def lightcurve_bol(
 def predict_bol(
     *,
     model: str,
-    theta,
-    ctx: Context,
+    params: Optional[Dict[str, Any]] = None,
+    theta=None,
+    z: Optional[float] = None,
     t_days: np.ndarray,
     Nx: int = 100,
     Ny: int = 1000,
     t_max_days: float = 150.0,
     interp_fill: Literal["edge", "nan", "raise"] = "nan",
 ) -> np.ndarray:
+    ctx = _context_from_forward_inputs(
+        z=z,
+        filters=None,
+        y_kind="mag",
+        require_filters=False,
+        require_z=False,
+    )
     engine = _get_engine(model)
-    theta = _normalize_theta(model, theta, allow_missing_tfloor=True)
+    theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=True)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
     z = ctx.distance.get_z()
@@ -352,26 +457,32 @@ def predict_bol(
 def lightcurve_multiband(
     *,
     model: str,
-    theta,
-    ctx: Context,
+    params: Optional[Dict[str, Any]] = None,
+    theta=None,
+    z: Optional[float],
+    filters: Dict[str, float],
     bands: Sequence[str],
+    y_kind: Literal["mag", "flux"] = "mag",
     Nx: int = 100,
     Ny: int = 1000,
     t_max_days: float = 150.0,
     sed=None,
 ) -> MultiBandLC:
-
-
+    ctx = _context_from_forward_inputs(
+        z=z,
+        filters=filters,
+        y_kind=y_kind,
+        require_filters=True,
+        require_z=True,
+    )
     sed = sed or BlackbodySED()
-    if ctx.filters is None:
-        raise ValueError("ctx.filters is required for multiband. For bolometric you can omit it.")
     filters = _norm_filters(ctx.filters)
     # Keep band case; only strip whitespace.
     bands = [_norm_band(b) for b in list(bands)]
     _require_bands_in_filters(bands, filters)
 
     engine = _get_engine(model)
-    theta = _normalize_theta(model, theta, allow_missing_tfloor=False)
+    theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=False)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
     z = ctx.distance.require_z()
@@ -392,20 +503,27 @@ def lightcurve_multiband(
 def predict_multiband(
     *,
     model: str,
-    theta,
-    ctx: Context,
+    params: Optional[Dict[str, Any]] = None,
+    theta=None,
+    z: Optional[float],
+    filters: Dict[str, float],
     t_days: np.ndarray,
     band: np.ndarray,
+    y_kind: Literal["mag", "flux"] = "mag",
     Nx: int = 100,
     Ny: int = 1000,
     t_max_days: float = 150.0,
     interp_fill: Literal["edge", "nan", "raise"] = "nan",
     sed=None,
 ) -> np.ndarray:
+    ctx = _context_from_forward_inputs(
+        z=z,
+        filters=filters,
+        y_kind=y_kind,
+        require_filters=True,
+        require_z=True,
+    )
     sed = sed or BlackbodySED()
-
-    if ctx.filters is None:
-        raise ValueError("ctx.filters is required for multiband. For bolometric you can omit it.")
     filters = _norm_filters(ctx.filters)
     t_days = np.asarray(t_days, float).reshape(-1)
 
@@ -419,7 +537,7 @@ def predict_multiband(
     nu_obs = np.array([filters[b] for b in uniq], float)
 
     engine = _get_engine(model)
-    theta = _normalize_theta(model, theta, allow_missing_tfloor=False)
+    theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=False)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
     z = ctx.distance.require_z()
@@ -826,9 +944,11 @@ def fit_multiband(
         y_mod = predict_multiband(
             model=model,
             theta=theta_model,
-            ctx=ctx,
+            z=ctx.distance.get_z(),
+            filters=filters,
             t_days=t_eval,
             band=band,
+            y_kind=ctx.y_kind,
             interp_fill=interp_fill_fit,
             **model_kwargs_pred,
         )
@@ -947,7 +1067,7 @@ def fit_bol(
         y_mod = predict_bol(
             model=model,
             theta=theta_model,
-            ctx=ctx,
+            z=ctx.distance.get_z(),
             t_days=t_eval,
             interp_fill=interp_fill_fit,
             **model_kwargs_pred,
@@ -996,9 +1116,9 @@ def fit_bol(
 
 
 __all__ = [
-    "Distance", "Context",
     "BolometricLC", "MultiBandLC",
     "BolometricData", "MultiBandData",
+    "model_param_names", "param_template",
     "lightcurve_bol", "predict_bol",
     "lightcurve_multiband", "predict_multiband",
     "fit_bol", "fit_multiband",
