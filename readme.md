@@ -42,6 +42,11 @@ It numerically solves the <strong>time-dependent radiative diffusion equation</s
 - Fast Bayesian inference with MCMC samplers such as `emcee`, `zeus`, and `dynesty`.
 - Simple public workflow centered on `tf.BolometricData(...)`, `tf.MultiBandData(...)`, `tf.fit_bol(...)`, and `tf.fit_multiband(...)`.
 - Direct forward-model helpers accept named `params={...}` dictionaries instead of opaque parameter tuples.
+- Multi-band helpers support both `AB` and `Vega` magnitudes.
+- Multi-band helpers accept either `z`-derived distances or explicit distance inputs such as `DL_Mpc`.
+- Multi-band helpers can apply either direct `A_band` values or standard `ebv/av + rv + law` extinction components.
+- Internally, the multi-band model pipeline always computes observer-frame `f_nu`; magnitude conversion is handled separately from the model core.
+- Extinction is handled in a dedicated module and is applied to the model prediction before comparison with data.
 - Built-in result inspection, fit plotting, corner plotting, and save/load helpers.
 - Internal solver runs in CGS units, while the public time interface uses observer-frame days for easier scientific use.
 
@@ -63,8 +68,8 @@ Optional packages:
 
 Notes:
 - Optional sampler backends are imported lazily, so `import transfit` does not require all sampler packages to be installed.
-- Public fitting APIs use `z` directly.
-- Public forward-model helpers also use direct inputs such as `z` and `filters`.
+- Multi-band APIs use `z` for redshift/time-dilation terms and can also accept explicit distance inputs (`DL_Mpc`, `distance_modulus`).
+- `filters` may be given as legacy effective frequencies or as built-in preset ids such as `"johnson_cousins.B"`.
 
 ## Usage
 
@@ -122,10 +127,10 @@ import matplotlib.pyplot as plt
 import transfit as tf
 
 filters = {
-    "B": 6.8e14,
-    "V": 5.5e14,
-    "R": 4.7e14,
-    "I": 3.9e14,
+    "B": "johnson_cousins.B",
+    "V": "johnson_cousins.V",
+    "R": "johnson_cousins.R",
+    "I": "johnson_cousins.I",
 }
 
 params_ni = {
@@ -142,9 +147,14 @@ mb = tf.lightcurve_multiband(
     model="nickel",
     params=params_ni,
     z=0.001728,
+    DL_Mpc=9.3,
     filters=filters,
     bands=["B", "V", "R", "I"],
     y_kind="mag",
+    mag_system="vega",
+    extinction={
+        "mw": {"ebv": 0.04, "rv": 3.1, "law": "odonnell94"},
+    },
     t_max_days=180.0,
 )
 
@@ -153,12 +163,12 @@ for b in mb.bands:
     ax.plot(mb.t_days, mb.y[b], label=b)
 ax.invert_yaxis()
 ax.set_xlabel("Observer time (days)")
-ax.set_ylabel("AB magnitude")
+ax.set_ylabel("Vega magnitude")
 ax.legend()
 ```
 
 <p align="center">
-  <img src="docs/lightcurve_bol.png" width="47%" alt="Example bolometric light curve">
+  <img src="docs/lightcurve_multiband.png" width="47%" alt="Example multi-band light curve">
 </p>
 
 #### Plot a fitted result
@@ -193,6 +203,9 @@ Rules:
 - all arrays must have matching lengths
 - `yerr` must be finite and positive
 - `mask` is optional and is applied automatically during fitting
+- multi-band fitting compares in the same observation space you provide: `y_kind="mag"` or `y_kind="flux"`
+- internally, multi-band models are always evaluated in `f_nu`; if you pass `y_kind="mag"`, TransFit converts the model to magnitudes only after extinction is applied
+- most supernova photometry is naturally provided in magnitudes, so `y_kind="mag"` is the standard choice unless you truly have calibrated flux-density data
 - `fit_bol(...)` does not fit `T_floor`; an internal `1000 K` floor is kept only for numerical stability
 
 #### Fit a bolometric light curve
@@ -251,17 +264,23 @@ data = tf.MultiBandData(
 )
 
 filters = {
-    "B": 6.8e14,
-    "V": 5.5e14,
-    "R": 4.7e14,
-    "I": 3.9e14,
+    "B": "johnson_cousins.B",
+    "V": "johnson_cousins.V",
+    "R": "johnson_cousins.R",
+    "I": "johnson_cousins.I",
 }
 
 res = tf.fit_multiband(
     data=data,
     model="nickel",
     z=0.001728,
+    DL_Mpc=9.3,
     filters=filters,
+    y_kind="mag",
+    mag_system="vega",
+    extinction={
+        "mw": {"ebv": 0.04, "rv": 3.1, "law": "odonnell94"},
+    },
     priors={
         "M_ej": (1.0, 5.0),
         "v_ej": (0.3, 3.0),
@@ -282,6 +301,30 @@ loaded = tf.load(path)
 ```
 
 #### Priors and samplers
+
+Distance inputs for multi-band fitting:
+- `z` only: luminosity distance is derived from cosmology
+- `z` plus `DL_Mpc` / `distance_modulus`: explicit distance is used for flux normalization, while `z` still controls redshift terms
+- explicit distance only: supported; internally this is treated as `z=0`
+
+Filter input styles for multi-band fitting:
+- legacy shorthand: `{"B": 6.8e14}`
+- built-in preset ids: `{"B": "johnson_cousins.B"}`
+- custom mono-frequency filters: `{"B": {"nu_eff_hz": 6.8e14, "vega_zero_point_jy": 4260.0}}`
+
+Magnitude systems:
+- `mag_system="ab"` works with all current mono-frequency filters
+- `mag_system="vega"` requires a Vega zero point for each used band
+
+Extinction inputs:
+- direct observer-frame values: `extinction={"B": 0.12, "V": 0.09, ...}`
+- a single dust component: `extinction={"ebv": 0.04, "rv": 3.1, "law": "ccm89"}`
+- named components: `extinction={"mw": {"ebv": 0.04, "rv": 3.1, "law": "odonnell94"}, "host": {"ebv": 0.08, "rv": 3.1, "law": "odonnell94"}}`
+- `mw` defaults to observer-frame application; `host` defaults to rest-frame application
+- you may also use `av` instead of `ebv`; TransFit converts it internally
+- supported built-in extinction laws: `ccm89`, `odonnell94`
+- extinction is applied to the model prediction, not to the input data table
+- if your photometry has already been dereddened or corrected for Galactic extinction, do not pass the same extinction again
 
 `t_shift` convention in fitting:
 - likelihood is evaluated as `model(t_obs + t_shift)`

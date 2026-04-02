@@ -8,11 +8,15 @@ from typing import Dict, List, Optional, Sequence, Literal, Any, Tuple
 import numpy as np
 
 from .data import BolometricData, MultiBandData
+from .modules.extinction import ExtinctionSpec, normalize_extinction, validate_extinction_spec
+from .modules.filters import FilterProfile, normalize_filters, validate_filter_map
 from .modules.interp import interp_fit
+from .modules.likelihood import gaussian_lnlike_flux, gaussian_lnlike_for_observation
+from .modules.photometry import evaluate_multiband_observer_output
 from .modules.sed import BlackbodySED
-from .samplers import FitResult, gaussian_lnlike, run_emcee, run_zeus, run_dynesty
+from .samplers import FitResult, run_emcee, run_zeus, run_dynesty
 from .priors import MixedBoundsPrior, build_bounds
-from transfit.constants import DAY
+from transfit.constants import DAY, MPC, PC
 
 
 # -------------------------
@@ -21,24 +25,26 @@ from transfit.constants import DAY
 
 _BOL_INTERNAL_T_FLOOR = 1000.0
 
+
 def _cosmo_luminosity_distance_cm(z: float) -> float:
     from astropy.cosmology import Planck15 as cosmo
     import astropy.units as u
 
     return cosmo.luminosity_distance(float(z)).to(u.cm).value
 
+
+def _distance_cm_from_modulus(distance_modulus: float) -> float:
+    return (10.0 ** ((float(distance_modulus) + 5.0) / 5.0)) * PC
+
+
 @dataclass(frozen=True)
 class _Distance:
     z: Optional[float] = None
     DL_cm: Optional[float] = None
+    source: Optional[str] = None
 
     def get_z(self) -> float:
         return float(self.z or 0.0)
-
-    def require_z(self) -> float:
-        if self.z is None:
-            raise ValueError("Redshift z is required for observer-frame multiband calculations.")
-        return float(self.z)
 
     def get_DL_cm(self) -> float:
         if self.DL_cm is not None:
@@ -49,14 +55,57 @@ class _Distance:
                     frac = abs(dl - dl_cosmo) / dl_cosmo
                     if frac > 0.05:
                         warnings.warn(
-                            "Using a user-supplied DL_cm that differs from the Planck15 luminosity distance "
+                            "Using a user-supplied explicit distance that differs from the Planck15 luminosity distance "
                             "implied by z by more than 5%. z is still used for time/frequency redshift terms.",
                             stacklevel=2,
                         )
             return dl
         if self.z is None:
-            raise ValueError("Distance needs either DL_cm or z.")
+            raise ValueError("Distance needs either an explicit distance or z.")
         return _cosmo_luminosity_distance_cm(float(self.z))
+
+
+def _distance_from_public_inputs(
+    *,
+    z: Optional[float],
+    DL_Mpc: Optional[float],
+    distance_modulus: Optional[float],
+    require_distance: bool,
+) -> _Distance:
+    explicit = [
+        ("DL_Mpc", DL_Mpc),
+        ("distance_modulus", distance_modulus),
+    ]
+    supplied = [(name, value) for name, value in explicit if value is not None]
+    if len(supplied) > 1:
+        names = [name for name, _ in supplied]
+        raise ValueError(
+            "Provide at most one of `DL_Mpc` or `distance_modulus`, "
+            f"got: {names}"
+        )
+
+    z_norm = None if z is None else float(z)
+    if z_norm is not None and not np.isfinite(z_norm):
+        raise ValueError("z must be finite when provided.")
+
+    dl_norm = None
+    source = None
+    if DL_Mpc is not None:
+        dl_norm = float(DL_Mpc) * MPC
+        source = "DL_Mpc"
+    elif distance_modulus is not None:
+        dl_norm = _distance_cm_from_modulus(float(distance_modulus))
+        source = "distance_modulus"
+
+    if dl_norm is not None and (not np.isfinite(dl_norm) or dl_norm <= 0.0):
+        raise ValueError("Explicit distance must be positive and finite.")
+    if require_distance and z_norm is None and dl_norm is None:
+        raise ValueError(
+            "Provide `z` or an explicit distance via `DL_Mpc` or `distance_modulus`."
+        )
+    if source is None and z_norm is not None:
+        source = "from_z"
+    return _Distance(z=z_norm, DL_cm=dl_norm, source=source)
 
 
 @dataclass(frozen=True)
@@ -64,20 +113,28 @@ class _Context:
     """
     Internal context for forward-model evaluation.
 
-    - Bolometric prediction: only distance is required.
-    - Multi-band prediction: filters is required,
-      y_kind defaults to "mag".
+    - Multi-band prediction: filters is required.
     """
     distance: _Distance
-    filters: Optional[Dict[str, float]] = None        # band -> nu_eff (Hz), only for multiband
-    y_kind: Literal["mag", "flux"] = "mag"            # only matters for multiband
+    filters: Optional[Dict[str, FilterProfile]] = None
+    y_kind: Literal["mag", "flux"] = "mag"
+    mag_system: Literal["ab", "vega"] = "ab"
+    extinction: Optional[ExtinctionSpec] = None
+
+
+def _effective_mag_system(y_kind: str, mag_system: str) -> str:
+    return str(mag_system).strip().lower() if str(y_kind).strip().lower() == "mag" else "ab"
 
 
 def _context_from_fit_inputs(
     *,
     z: Optional[float],
-    filters: Optional[Dict[str, float]],
+    DL_Mpc: Optional[float],
+    distance_modulus: Optional[float],
+    filters: Optional[Dict[str, Any]],
     y_kind: Literal["mag", "flux"],
+    mag_system: Literal["ab", "vega"],
+    extinction: Optional[Dict[str, Any] | ExtinctionSpec],
     require_filters: bool,
 ) -> _Context:
     """
@@ -86,26 +143,40 @@ def _context_from_fit_inputs(
     Public fitting APIs accept direct scalar inputs instead of exposing
     Context/Distance as required user-facing concepts.
     """
-    if z is None:
-        raise ValueError("Provide `z` for fitting. The public fit API standardizes distance handling on redshift.")
     if require_filters and filters is None:
         raise ValueError(
             "filters is required for multiband fitting."
         )
+    y_kind_n = str(y_kind).strip().lower()
+    mag_system_n = str(mag_system).strip().lower()
     return _Context(
-        distance=_Distance(z=z),
-        filters=filters,
-        y_kind=str(y_kind),
+        distance=_distance_from_public_inputs(
+            z=z,
+            DL_Mpc=DL_Mpc,
+            distance_modulus=distance_modulus,
+            require_distance=require_filters,
+        ),
+        filters=None if filters is None else normalize_filters(
+            filters,
+            mag_system=_effective_mag_system(y_kind_n, mag_system_n),
+        ),
+        y_kind=y_kind_n,
+        mag_system=mag_system_n,
+        extinction=normalize_extinction(extinction),
     )
 
 
 def _context_from_forward_inputs(
     *,
     z: Optional[float],
-    filters: Optional[Dict[str, float]],
+    DL_Mpc: Optional[float],
+    distance_modulus: Optional[float],
+    filters: Optional[Dict[str, Any]],
     y_kind: Literal["mag", "flux"],
+    mag_system: Literal["ab", "vega"],
+    extinction: Optional[Dict[str, Any] | ExtinctionSpec],
     require_filters: bool,
-    require_z: bool,
+    require_distance: bool,
 ) -> _Context:
     """
     Build internal forward metadata for public prediction/lightcurve helpers.
@@ -113,14 +184,24 @@ def _context_from_forward_inputs(
     Public forward APIs accept direct scalar inputs instead of requiring
     Context/Distance objects from users.
     """
-    if require_z and z is None:
-        raise ValueError("Provide `z` for multiband forward calculations.")
     if require_filters and filters is None:
         raise ValueError("filters is required for multiband forward calculations.")
+    y_kind_n = str(y_kind).strip().lower()
+    mag_system_n = str(mag_system).strip().lower()
     return _Context(
-        distance=_Distance(z=0.0 if z is None else z),
-        filters=filters,
-        y_kind=str(y_kind),
+        distance=_distance_from_public_inputs(
+            z=z,
+            DL_Mpc=DL_Mpc,
+            distance_modulus=distance_modulus,
+            require_distance=require_distance,
+        ),
+        filters=None if filters is None else normalize_filters(
+            filters,
+            mag_system=_effective_mag_system(y_kind_n, mag_system_n),
+        ),
+        y_kind=y_kind_n,
+        mag_system=mag_system_n,
+        extinction=normalize_extinction(extinction),
     )
 
 
@@ -154,25 +235,6 @@ def _norm_band(x: Any) -> str:
     This makes band matching case-sensitive (as requested).
     """
     return str(x).strip()
-
-
-def _norm_filters(filters: Dict[str, float]) -> Dict[str, float]:
-    """
-    Normalize filter keys by strip only (keep case).
-    """
-    return {_norm_band(k): float(v) for k, v in filters.items()}
-
-
-def _require_bands_in_filters(bands: Sequence[str], filters: Dict[str, float]) -> None:
-    """
-    Case-sensitive check.
-    """
-    missing = [b for b in bands if b not in filters]
-    if missing:
-        raise KeyError(
-            f"These bands are missing in filters (case-sensitive): {missing}. "
-            f"Available: {sorted(filters.keys())}"
-        )
 
 
 def _as_1d_float(x, name: str) -> np.ndarray:
@@ -399,10 +461,14 @@ def lightcurve_bol(
 ) -> BolometricLC:
     ctx = _context_from_forward_inputs(
         z=z,
+        DL_Mpc=None,
+        distance_modulus=None,
         filters=None,
         y_kind="mag",
+        mag_system="ab",
+        extinction=None,
         require_filters=False,
-        require_z=False,
+        require_distance=False,
     )
     engine = _get_engine(model)
     theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=True)
@@ -432,10 +498,14 @@ def predict_bol(
 ) -> np.ndarray:
     ctx = _context_from_forward_inputs(
         z=z,
+        DL_Mpc=None,
+        distance_modulus=None,
         filters=None,
         y_kind="mag",
+        mag_system="ab",
+        extinction=None,
         require_filters=False,
-        require_z=False,
+        require_distance=False,
     )
     engine = _get_engine(model)
     theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=True)
@@ -459,10 +529,14 @@ def lightcurve_multiband(
     model: str,
     params: Optional[Dict[str, Any]] = None,
     theta=None,
-    z: Optional[float],
-    filters: Dict[str, float],
+    z: Optional[float] = None,
+    DL_Mpc: Optional[float] = None,
+    distance_modulus: Optional[float] = None,
+    filters: Optional[Dict[str, Any]] = None,
     bands: Sequence[str],
     y_kind: Literal["mag", "flux"] = "mag",
+    mag_system: Literal["ab", "vega"] = "ab",
+    extinction: Optional[Dict[str, Any] | ExtinctionSpec] = None,
     Nx: int = 100,
     Ny: int = 1000,
     t_max_days: float = 150.0,
@@ -470,31 +544,48 @@ def lightcurve_multiband(
 ) -> MultiBandLC:
     ctx = _context_from_forward_inputs(
         z=z,
+        DL_Mpc=DL_Mpc,
+        distance_modulus=distance_modulus,
         filters=filters,
         y_kind=y_kind,
+        mag_system=mag_system,
+        extinction=extinction,
         require_filters=True,
-        require_z=True,
+        require_distance=True,
     )
     sed = sed or BlackbodySED()
-    filters = _norm_filters(ctx.filters)
-    # Keep band case; only strip whitespace.
     bands = [_norm_band(b) for b in list(bands)]
-    _require_bands_in_filters(bands, filters)
+    filter_map = validate_filter_map(
+        ctx.filters or {},
+        used_bands=bands,
+        mag_system=_effective_mag_system(ctx.y_kind, ctx.mag_system),
+    )
+    z = ctx.distance.get_z()
+    extinction_spec = validate_extinction_spec(
+        ctx.extinction,
+        used_bands=bands,
+        filter_map=filter_map,
+        z=z,
+    )
 
     engine = _get_engine(model)
     theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=False)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
-    z = ctx.distance.require_z()
     DL_cm = ctx.distance.get_DL_cm()
     t_days = _t_grid_days_from_ts(t_s, z=z)
-
-    nu_obs = np.array([filters[b] for b in bands], float)
-
-    if ctx.y_kind == "mag":
-        y_grid = sed.abmag(nu_obs, np.asarray(Teff), np.asarray(Rph), DL_cm=DL_cm, z=z)  # (Nb,Nt)
-    else:
-        y_grid = sed.fnu(nu_obs, np.asarray(Teff), np.asarray(Rph), DL_cm=DL_cm, z=z)
+    y_grid = evaluate_multiband_observer_output(
+        sed=sed,
+        filter_map=filter_map,
+        bands=bands,
+        Teff_K=np.asarray(Teff, float),
+        R_cm=np.asarray(Rph, float),
+        DL_cm=DL_cm,
+        z=z,
+        y_kind=ctx.y_kind,
+        mag_system=ctx.mag_system,
+        extinction=extinction_spec,
+    )
 
     y = {b: np.asarray(y_grid[i], float).copy() for i, b in enumerate(bands)}
     return MultiBandLC(t_days=np.asarray(t_days, float), bands=bands, y=y)
@@ -505,11 +596,15 @@ def predict_multiband(
     model: str,
     params: Optional[Dict[str, Any]] = None,
     theta=None,
-    z: Optional[float],
-    filters: Dict[str, float],
+    z: Optional[float] = None,
+    DL_Mpc: Optional[float] = None,
+    distance_modulus: Optional[float] = None,
+    filters: Optional[Dict[str, Any]] = None,
     t_days: np.ndarray,
     band: np.ndarray,
     y_kind: Literal["mag", "flux"] = "mag",
+    mag_system: Literal["ab", "vega"] = "ab",
+    extinction: Optional[Dict[str, Any] | ExtinctionSpec] = None,
     Nx: int = 100,
     Ny: int = 1000,
     t_max_days: float = 150.0,
@@ -518,13 +613,16 @@ def predict_multiband(
 ) -> np.ndarray:
     ctx = _context_from_forward_inputs(
         z=z,
+        DL_Mpc=DL_Mpc,
+        distance_modulus=distance_modulus,
         filters=filters,
         y_kind=y_kind,
+        mag_system=mag_system,
+        extinction=extinction,
         require_filters=True,
-        require_z=True,
+        require_distance=True,
     )
     sed = sed or BlackbodySED()
-    filters = _norm_filters(ctx.filters)
     t_days = np.asarray(t_days, float).reshape(-1)
 
     # Keep band case; only strip whitespace.
@@ -532,24 +630,38 @@ def predict_multiband(
     _check_same_length(t_days=t_days, band=band)
 
     uniq = sorted(set(band.tolist()))
-    _require_bands_in_filters(uniq, filters)
-
-    nu_obs = np.array([filters[b] for b in uniq], float)
+    filter_map = validate_filter_map(
+        ctx.filters or {},
+        used_bands=uniq,
+        mag_system=_effective_mag_system(ctx.y_kind, ctx.mag_system),
+    )
+    z = ctx.distance.get_z()
+    extinction_spec = validate_extinction_spec(
+        ctx.extinction,
+        used_bands=uniq,
+        filter_map=filter_map,
+        z=z,
+    )
 
     engine = _get_engine(model)
     theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=False)
     t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
 
-    z = ctx.distance.require_z()
     DL_cm = ctx.distance.get_DL_cm()
     t_grid_days = _t_grid_days_from_ts(t_s, z=z)
-
-    if ctx.y_kind == "mag":
-        y_grid = sed.abmag(nu_obs, np.asarray(Teff), np.asarray(Rph), DL_cm=DL_cm, z=z)
-        itp_yscale = "linear"
-    else:
-        y_grid = sed.fnu(nu_obs, np.asarray(Teff), np.asarray(Rph), DL_cm=DL_cm, z=z)
-        itp_yscale = "log10"
+    y_grid = evaluate_multiband_observer_output(
+        sed=sed,
+        filter_map=filter_map,
+        bands=uniq,
+        Teff_K=np.asarray(Teff, float),
+        R_cm=np.asarray(Rph, float),
+        DL_cm=DL_cm,
+        z=z,
+        y_kind=ctx.y_kind,
+        mag_system=ctx.mag_system,
+        extinction=extinction_spec,
+    )
+    itp_yscale = "linear" if ctx.y_kind == "mag" else "log10"
 
     out = np.empty_like(t_days, float)
     for i, b in enumerate(uniq):
@@ -882,8 +994,12 @@ def fit_multiband(
     data: MultiBandData,
     model: str,
     z: Optional[float] = None,
-    filters: Optional[Dict[str, float]] = None,
+    DL_Mpc: Optional[float] = None,
+    distance_modulus: Optional[float] = None,
+    filters: Optional[Dict[str, Any]] = None,
     y_kind: Literal["mag", "flux"] = "mag",
+    mag_system: Literal["ab", "vega"] = "ab",
+    extinction: Optional[Dict[str, Any] | ExtinctionSpec] = None,
     priors: Optional[Dict[str, Any]] = None,
     fixed: Optional[Dict[str, float]] = None,
     sampler: str = "emcee",
@@ -892,8 +1008,12 @@ def fit_multiband(
 ) -> FitResult:
     ctx = _context_from_fit_inputs(
         z=z,
+        DL_Mpc=DL_Mpc,
+        distance_modulus=distance_modulus,
         filters=filters,
         y_kind=y_kind,
+        mag_system=mag_system,
+        extinction=extinction,
         require_filters=True,
     )
     sampler_kwargs = dict(sampler_kwargs or {})
@@ -925,9 +1045,18 @@ def fit_multiband(
     # ---- band check (case-sensitive) ----
     if ctx.filters is None:
         raise ValueError("ctx.filters is required for multiband. For bolometric you can omit it.")
-    filters = _norm_filters(ctx.filters)
     uniq_b = sorted(set(band.tolist()))
-    _require_bands_in_filters(uniq_b, filters)
+    filters = validate_filter_map(
+        ctx.filters,
+        used_bands=uniq_b,
+        mag_system=_effective_mag_system(ctx.y_kind, ctx.mag_system),
+    )
+    extinction_spec = validate_extinction_spec(
+        ctx.extinction,
+        used_bands=uniq_b,
+        filter_map=filters,
+        z=ctx.distance.get_z(),
+    )
 
     # ---- lnprob ----
     def lnprob(sample_vec: np.ndarray) -> float:
@@ -944,11 +1073,14 @@ def fit_multiband(
         y_mod = predict_multiband(
             model=model,
             theta=theta_model,
-            z=ctx.distance.get_z(),
+            z=ctx.distance.z,
+            DL_Mpc=None if ctx.distance.DL_cm is None else float(ctx.distance.DL_cm) / MPC,
             filters=filters,
             t_days=t_eval,
             band=band,
             y_kind=ctx.y_kind,
+            mag_system=ctx.mag_system,
+            extinction=extinction_spec,
             interp_fill=interp_fill_fit,
             **model_kwargs_pred,
         )
@@ -956,7 +1088,12 @@ def fit_multiband(
         if np.any(~np.isfinite(y_mod)):
             return -np.inf
 
-        return lp + gaussian_lnlike(y_obs, y_mod, y_err)
+        return lp + gaussian_lnlike_for_observation(
+            y_kind=ctx.y_kind,
+            y_obs=y_obs,
+            y_model=y_mod,
+            y_err=y_err,
+        )
 
     samples, logp, meta, sampler_used = _run_sampler(
         sampler=sampler,
@@ -969,6 +1106,7 @@ def fit_multiband(
         dict(
             model=model,
             y_kind=ctx.y_kind,
+            mag_system=ctx.mag_system,
             names_all=names_all,
             bounds_all=np.asarray(bounds_all, float),
             bounds_samp=np.asarray(bounds_samp, float),
@@ -1018,8 +1156,12 @@ def fit_bol(
 
     ctx = _context_from_fit_inputs(
         z=z,
+        DL_Mpc=None,
+        distance_modulus=None,
         filters=None,
         y_kind="mag",
+        mag_system="ab",
+        extinction=None,
         require_filters=False,
     )
     sampler_kwargs = dict(sampler_kwargs or {})
@@ -1076,7 +1218,7 @@ def fit_bol(
         if np.any(~np.isfinite(y_mod)):
             return -np.inf
 
-        return lp + gaussian_lnlike(y_obs, y_mod, y_err)
+        return lp + gaussian_lnlike_flux(y_obs, y_mod, y_err)
 
     samples, logp, meta, sampler_used = _run_sampler(
         sampler=sampler,

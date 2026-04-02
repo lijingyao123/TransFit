@@ -25,6 +25,12 @@ from typing import Any, Dict, Optional, Sequence, Tuple, Union, List, Literal
 import numpy as np
 import matplotlib.pyplot as plt
 
+from transfit.constants import MPC
+
+from .extinction import extinction_from_dict
+from .filters import filters_from_dict
+from .io import _ctx_to_dict, _validate_ctx_dict
+
 
 # -----------------------------------------------------------------------------
 # style (good journal-like defaults, only inside rc_context)
@@ -60,6 +66,14 @@ def _journal_rc() -> Dict[str, Any]:
 def _maybe_invert_mag_axis(ax, y_kind: str):
     if str(y_kind).lower() == "mag":
         ax.invert_yaxis()
+
+
+def _mag_ylabel(y_kind: str, mag_system: str) -> str:
+    if str(y_kind).lower() != "mag":
+        return r"F$_\nu$"
+    if str(mag_system).lower() == "vega":
+        return "Vega mag"
+    return "AB mag"
 
 
 # Parameter labels with units (LaTeX-ready for matplotlib mathtext).
@@ -108,22 +122,12 @@ def _to_loaded(res: Union[Dict[str, Any], Any]) -> Dict[str, Any]:
       samples, log_prob, param_names, all_param_names, fixed, meta, ctx, model
     """
     if isinstance(res, dict):
-        return res
+        loaded = dict(res)
+        if "ctx" in loaded:
+            loaded["ctx"] = _validate_ctx_dict(dict(loaded.get("ctx", {}) or {}))
+        return loaded
 
     if hasattr(res, "samples") and hasattr(res, "param_names"):
-        # pack ctx into a serializable dict (optional)
-        ctx = getattr(res, "ctx", None)
-        ctx_dict: Dict[str, Any] = {}
-        if ctx is not None:
-            dist = getattr(ctx, "distance", None)
-            dist_dict: Dict[str, Any] = {}
-            if dist is not None:
-                dist_dict = dict(z=getattr(dist, "z", None), DL_cm=getattr(dist, "DL_cm", None))
-            filters = getattr(ctx, "filters", {}) or {}
-            filters = {str(k): float(v) for k, v in dict(filters).items()}
-            y_kind = str(getattr(ctx, "y_kind", "mag"))
-            ctx_dict = dict(distance=dist_dict, filters=filters, y_kind=y_kind)
-
         return dict(
             samples=np.asarray(res.samples, float),
             log_prob=np.asarray(getattr(res, "log_prob", None), float)
@@ -133,7 +137,7 @@ def _to_loaded(res: Union[Dict[str, Any], Any]) -> Dict[str, Any]:
             all_param_names=np.asarray(getattr(res, "all_param_names", []), dtype=object),
             fixed=dict(getattr(res, "fixed", {}) or {}),
             meta=dict(getattr(res, "meta", {}) or {}),
-            ctx=ctx_dict,
+            ctx=_ctx_to_dict(getattr(res, "ctx", None)),
             model=str(getattr(res, "model", "")),
             sampler=str(getattr(res, "sampler", "")),
         )
@@ -144,16 +148,22 @@ def _to_loaded(res: Union[Dict[str, Any], Any]) -> Dict[str, Any]:
     )
 
 
-def _forward_inputs_from_ctx_dict(ctx_dict: Dict[str, Any]) -> Tuple[Optional[float], Dict[str, float], str]:
-    ctx_dict = dict(ctx_dict or {})
+def _forward_inputs_from_ctx_dict(
+    ctx_dict: Dict[str, Any],
+) -> Tuple[Optional[float], Optional[float], Dict[str, Any], str, str, Any]:
+    ctx_dict = _validate_ctx_dict(dict(ctx_dict or {}))
     dist = dict(ctx_dict.get("distance", {}) or {})
     z = dist.get("z", None)
     if z is not None:
         z = float(z)
-    filters = dict(ctx_dict.get("filters", {}) or {})
-    filters = {str(k): float(v) for k, v in filters.items()}
-    y_kind = str(ctx_dict.get("y_kind", "mag"))
-    return z, filters, y_kind
+    DL_cm = dist.get("DL_cm", None)
+    DL_Mpc = None if DL_cm is None else float(DL_cm) / MPC
+    filters = filters_from_dict(dict(ctx_dict.get("filters", {}) or {}))
+    phot = dict(ctx_dict.get("photometry", {}) or {})
+    y_kind = str(phot.get("y_kind", "mag"))
+    mag_system = str(phot.get("mag_system", "ab"))
+    extinction = extinction_from_dict(ctx_dict.get("extinction"))
+    return z, DL_Mpc, filters, y_kind, mag_system, extinction
 
 
 def _get_model_name(loaded: Dict[str, Any], fallback: Optional[str] = None) -> str:
@@ -388,8 +398,10 @@ def fit_bol(
     data must provide: t_days, y, yerr
     """
     from ..api import predict_bol  # lazy import
+    from ..api import _apply_data_filter  # lazy import
 
     loaded = _to_loaded(res)
+    data = _apply_data_filter(data)
 
     # default model_kwargs: use saved meta if exists
     mk_saved = dict((loaded.get("meta", {}) or {}).get("model_kwargs", {}) or {})
@@ -399,7 +411,7 @@ def fit_bol(
 
     ctx_dict = loaded.get("ctx", {}) or {}
     if ctx_dict:
-        z, _, y_kind = _forward_inputs_from_ctx_dict(ctx_dict)
+        z, _, _, y_kind, _, _ = _forward_inputs_from_ctx_dict(ctx_dict)
     else:
         raise ValueError("Stored forward metadata is required (not found in loaded result).")
 
@@ -552,8 +564,10 @@ def fit_multiband(
     Bands are grouped exactly as they appear (case-sensitive, no normalization).
     """
     from ..api import predict_multiband  # lazy import
+    from ..api import _apply_data_filter  # lazy import
 
     loaded = _to_loaded(res)
+    data = _apply_data_filter(data)
 
     # default model_kwargs: use saved meta if exists
     mk_saved = dict((loaded.get("meta", {}) or {}).get("model_kwargs", {}) or {})
@@ -563,11 +577,12 @@ def fit_multiband(
 
     ctx_dict = loaded.get("ctx", {}) or {}
     if ctx_dict:
-        z, filters, y_kind = _forward_inputs_from_ctx_dict(ctx_dict)
+        z, DL_Mpc, filters, y_kind, mag_system, extinction = _forward_inputs_from_ctx_dict(ctx_dict)
     else:
         raise ValueError("Stored forward metadata is required (not found in loaded result).")
 
     y_kind = str(y_kind).lower()
+    mag_system = str(mag_system).lower()
     model_name = _get_model_name(loaded, fallback=model)
 
     samples = np.asarray(loaded["samples"], float)
@@ -623,17 +638,20 @@ def fit_multiband(
                 model=model_name,
                 theta=theta_0,
                 z=z,
+                DL_Mpc=DL_Mpc,
                 filters=filters,
                 t_days=t_model_plot,
                 band=np.array([b] * len(t_plot), dtype=object),
                 y_kind=y_kind,
+                mag_system=mag_system,
+                extinction=extinction,
                 interp_fill=interp_fill_model,
                 **model_kwargs_eval,
             )
             ax.plot(t_plot, y_line, lw=lw_model, color=c, label=f"{b} {model_tag}")
 
             if show_1sigma:
-                rng = np.random.default_rng(1000 + (hash(str(b)) % 1000))
+                rng = np.random.default_rng(1000 + bands.index(b))
                 draw_n = int(n_draws) if int(n_draws) > 0 else 300
                 draw = min(draw_n, subset.shape[0])
                 jj = rng.choice(subset.shape[0], size=draw, replace=False)
@@ -652,10 +670,13 @@ def fit_multiband(
                             model=model_name,
                             theta=theta_j,
                             z=z,
+                            DL_Mpc=DL_Mpc,
                             filters=filters,
                             t_days=t_eval[valid],
                             band=np.array([b] * int(np.sum(valid)), dtype=object),
                             y_kind=y_kind,
+                            mag_system=mag_system,
+                            extinction=extinction,
                             interp_fill=interp_fill_model,
                             **model_kwargs_eval,
                         )
@@ -669,12 +690,21 @@ def fit_multiband(
                     lo[valid_col] = np.nanquantile(ys[:, valid_col], 0.16, axis=0)
                     hi[valid_col] = np.nanquantile(ys[:, valid_col], 0.84, axis=0)
                     ax.fill_between(t_plot, lo, hi, where=valid_col, color=c, alpha=alpha_band)
-        ax.set_ylim(min(y_obs)-2, max(y_obs)+2)  # invert y-axis for mag/Fnu
+        if ylim is None:
+            if y_kind == "mag":
+                ax.set_ylim(float(np.nanmin(y_obs)) - 2.0, float(np.nanmax(y_obs)) + 2.0)
+            else:
+                finite = np.isfinite(y_obs)
+                if np.any(finite):
+                    ymin = float(np.nanmin(y_obs[finite]))
+                    ymax = float(np.nanmax(y_obs[finite]))
+                    pad = 0.05 * (ymax - ymin) if ymax > ymin else max(abs(ymax) * 0.1, 1e-30)
+                    ax.set_ylim(ymin - pad, ymax + pad)
         x_min = min(float(np.nanmin(t_obs)), float(np.nanmin(t_plot)))
         x_max = max(float(np.nanmax(t_obs)), float(np.nanmax(t_plot)))
         ax.set_xlim(x_min - 10, x_max + 10)
         ax.set_xlabel("Since First Detection (days)")
-        ax.set_ylabel("AB mag" if y_kind == "mag" else "F$_\\nu$")
+        ax.set_ylabel(_mag_ylabel(y_kind, mag_system))
         _maybe_invert_mag_axis(ax, y_kind)
 
         if ylim is not None:

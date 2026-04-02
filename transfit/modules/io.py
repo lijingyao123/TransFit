@@ -15,6 +15,8 @@ import json
 import datetime as _dt
 import numpy as np
 
+from .extinction import extinction_from_dict, extinction_to_dict
+from .filters import filters_from_dict, filters_to_dict
 from ..samplers import FitResult
 
 
@@ -41,14 +43,24 @@ def _ctx_to_dict(ctx) -> Dict[str, Any]:
         dist_dict = {
             "z": None if z is None else float(z),
             "DL_cm": None if DL_cm is None else float(DL_cm),
+            "source": getattr(dist, "source", None),
         }
 
-    filters = getattr(ctx, "filters", {}) or {}
-    filters = {str(k): float(v) for k, v in dict(filters).items()}
-
     y_kind = str(getattr(ctx, "y_kind", "mag"))
+    mag_system = str(getattr(ctx, "mag_system", "ab"))
+    filters = filters_to_dict(getattr(ctx, "filters", {}) or {})
+    extinction = extinction_to_dict(getattr(ctx, "extinction", None))
 
-    return {"distance": dist_dict, "filters": filters, "y_kind": y_kind}
+    return {
+        "schema_version": 2,
+        "distance": dist_dict,
+        "photometry": {
+            "y_kind": y_kind,
+            "mag_system": mag_system,
+        },
+        "filters": filters,
+        "extinction": extinction,
+    }
 
 
 def save(res: FitResult, path: Union[str, Path, None] = None) -> str:
@@ -137,11 +149,33 @@ def _validate_ctx_dict(ctx: Dict[str, Any]) -> Dict[str, Any]:
         val = distance.get(key, None)
         if val is not None:
             distance[key] = float(val)
+    source = distance.get("source", None)
+    if source is not None:
+        distance["source"] = str(source)
 
-    filters = dict(ctx.get("filters", {}) or {})
-    filters = {str(k): float(v) for k, v in filters.items()}
+    if "photometry" in ctx:
+        phot = dict(ctx.get("photometry", {}) or {})
+        y_kind = str(phot.get("y_kind", "mag"))
+        mag_system = str(phot.get("mag_system", "ab"))
+        filters = filters_to_dict(filters_from_dict(dict(ctx.get("filters", {}) or {})))
+        extinction = extinction_to_dict(extinction_from_dict(ctx.get("extinction")))
+        return {
+            "schema_version": int(ctx.get("schema_version", 2)),
+            "distance": distance,
+            "photometry": {"y_kind": y_kind, "mag_system": mag_system},
+            "filters": filters,
+            "extinction": extinction,
+        }
+
+    filters = filters_to_dict(filters_from_dict(dict(ctx.get("filters", {}) or {})))
     y_kind = str(ctx.get("y_kind", "mag"))
-    return {"distance": distance, "filters": filters, "y_kind": y_kind}
+    return {
+        "schema_version": 1,
+        "distance": distance,
+        "photometry": {"y_kind": y_kind, "mag_system": "ab"},
+        "filters": filters,
+        "extinction": None,
+    }
 
 
 def _decode_loaded_payload(out: Dict[str, Any], *, allow_object_strings: bool = False) -> Dict[str, Any]:

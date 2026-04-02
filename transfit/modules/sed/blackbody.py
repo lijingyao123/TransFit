@@ -6,9 +6,10 @@ Blackbody SED mapping for gray-radiation models.
 Given Teff(t) and Rph(t), produce:
 - L_nu(nu_rest, t)  [erg/s/Hz]
 - F_nu at observer (requires DL_cm)
-- AB magnitude at observer
 
 This module intentionally contains NO cosmology; DL_cm must be provided by caller.
+Magnitude conversion lives in `transfit.modules.magnitudes` and is kept out of the
+model core on purpose.
 """
 
 from __future__ import annotations
@@ -85,8 +86,10 @@ class BlackbodySED:
         z: float = 0.0,
     ) -> np.ndarray:
         """
-        AB magnitude grid, shape (Nb, Nt):
-          mAB = -2.5 log10(Fnu) - 48.6
+        Legacy convenience wrapper.
+
+        The main code path now keeps the model core in F_nu and performs
+        magnitude conversion in `transfit.modules.magnitudes`.
         """
         Fnu = self.fnu(nu_obs_hz, Teff_K, R_cm, DL_cm=DL_cm, z=z)
         mab = -2.5 * np.log10(Fnu) - 48.6
