@@ -14,6 +14,7 @@ from .modules.interp import interp_fit
 from .modules.likelihood import gaussian_lnlike_flux, gaussian_lnlike_for_observation
 from .modules.photometry import evaluate_multiband_observer_output
 from .modules.sed import BlackbodySED
+from .model_registry import canonical_model_name, forward_param_defaults
 from .samplers import FitResult, run_emcee, run_zeus, run_dynesty
 from .priors import MixedBoundsPrior, build_bounds
 from transfit.constants import DAY, MPC, PC
@@ -269,39 +270,23 @@ def _apply_data_filter(data):
 _ENGINE_CACHE = {}
 
 def _get_engine(model: str):
-    # model name itself can be case-insensitive
-    m = str(model).lower().strip()
+    m = canonical_model_name(model, warn_legacy=False)
     if m in _ENGINE_CACHE:
         return _ENGINE_CACHE[m]
 
-    if m in ["ni", "nickel"]:
+    if m == "nickel":
         from .models.nickel import NickelModel
         eng = NickelModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
-    if m in ["scni", "sc_ni", "sc-nickel", "shockcooling+ni"]:
-        from .models.sc_ni import SCNiModel
-        eng = SCNiModel()
-        _ENGINE_CACHE[m] = eng
-        return eng
-
-    # SC Magnetar (keeps E_Th_in and R_0 as model parameters)
-    if m in ["scmagnetar", "sc_magnetar", "sc-magnetar"]:
-        from .models.sc_magnetar import SCMagnetarModel
-        eng = SCMagnetarModel()
-        _ENGINE_CACHE[m] = eng
-        return eng
-
-    # Pure Magnetar (E_Th_in=0, R_0=1 fixed)
-    if m in ["magnetar", "mag", "mg"]:
+    if m == "magnetar":
         from .models.magnetar import MagnetarModel
         eng = MagnetarModel()
         _ENGINE_CACHE[m] = eng
         return eng
 
-    # Magnetar + Ni
-    if m in ["magni", "mag_ni", "mag-ni", "mag+ni", "magnetar+ni", "magnetar_ni", "magnetar-ni"]:
+    if m == "magnetar_ni":
         from .models.magnetar_ni import MagNiModel
         eng = MagNiModel()
         _ENGINE_CACHE[m] = eng
@@ -316,50 +301,50 @@ def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
     numerical floor used for bolometric-only evaluation.
     This keeps backward compatibility with shorter theta in examples.
     """
-    m = str(model).lower().strip()
+    m = canonical_model_name(model, warn_legacy=False)
     theta_t = tuple(theta)
 
-    if m in ["ni", "nickel"]:
-        expected = 7
-        if len(theta_t) == expected - 1:
-            if not allow_missing_tfloor:
-                raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (*theta_t, _BOL_INTERNAL_T_FLOOR)
-        if len(theta_t) != expected:
-            raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
-        return theta_t
-
-    if m in ["scni", "sc_ni", "sc-nickel", "shockcooling+ni"]:
+    if m == "nickel":
         expected = 9
+        legacy = 7
+        if len(theta_t) == expected:
+            return theta_t
         if len(theta_t) == expected - 1:
             if not allow_missing_tfloor:
                 raise ValueError(f"theta for model='{model}' must have length {expected}")
             return (*theta_t, _BOL_INTERNAL_T_FLOOR)
-        if len(theta_t) != expected:
-            raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
-        return theta_t
+        if len(theta_t) == legacy:
+            return (theta_t[0], theta_t[1], 0.0, theta_t[2], 10.0, theta_t[3], theta_t[4], theta_t[5], theta_t[6])
+        if len(theta_t) == legacy - 1:
+            if not allow_missing_tfloor:
+                raise ValueError(f"theta for model='{model}' must have length {expected}")
+            return (theta_t[0], theta_t[1], 0.0, theta_t[2], 10.0, theta_t[3], theta_t[4], theta_t[5], _BOL_INTERNAL_T_FLOOR)
+        raise ValueError(
+            f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor; "
+            f"legacy {legacy}/{legacy-1} forms are also accepted)"
+        )
 
-    if m in ["scmagnetar", "sc_magnetar", "sc-magnetar"]:
+    if m == "magnetar":
         expected = 9
+        legacy = 7
+        if len(theta_t) == expected:
+            return theta_t
         if len(theta_t) == expected - 1:
             if not allow_missing_tfloor:
                 raise ValueError(f"theta for model='{model}' must have length {expected}")
             return (*theta_t, _BOL_INTERNAL_T_FLOOR)
-        if len(theta_t) != expected:
-            raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
-        return theta_t
-
-    if m in ["magnetar", "mag", "mg"]:
-        expected = 7
-        if len(theta_t) == expected - 1:
+        if len(theta_t) == legacy:
+            return (theta_t[0], theta_t[1], 0.0, theta_t[2], theta_t[3], 1.0, theta_t[4], theta_t[5], theta_t[6])
+        if len(theta_t) == legacy - 1:
             if not allow_missing_tfloor:
                 raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (*theta_t, _BOL_INTERNAL_T_FLOOR)
-        if len(theta_t) != expected:
-            raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
-        return theta_t
+            return (theta_t[0], theta_t[1], 0.0, theta_t[2], theta_t[3], 1.0, theta_t[4], theta_t[5], _BOL_INTERNAL_T_FLOOR)
+        raise ValueError(
+            f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor; "
+            f"legacy {legacy}/{legacy-1} forms are also accepted)"
+        )
 
-    if m in ["magni", "mag_ni", "mag-ni", "mag+ni", "magnetar+ni", "magnetar_ni", "magnetar-ni"]:
+    if m == "magnetar_ni":
         expected = 8
         if len(theta_t) == expected - 1:
             if not allow_missing_tfloor:
@@ -373,6 +358,7 @@ def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
 
 
 def model_param_names(model: str, *, include_t_shift: bool = False) -> List[str]:
+    model = canonical_model_name(model, warn_legacy=True)
     names, _ = build_bounds(model, include_t_shift=include_t_shift)
     return list(names)
 
@@ -383,6 +369,7 @@ def param_template(
     include_t_shift: bool = False,
     fill_value: Any = None,
 ) -> Dict[str, Any]:
+    model = canonical_model_name(model, warn_legacy=True)
     return {name: fill_value for name in model_param_names(model, include_t_shift=include_t_shift)}
 
 
@@ -399,6 +386,8 @@ def _theta_from_params(
     # Allow direct reuse of res.best_params / res.median_params in forward helpers.
     values.pop("t_shift", None)
 
+    model = canonical_model_name(model, warn_legacy=False)
+    defaults = forward_param_defaults(model)
     names = model_param_names(model, include_t_shift=False)
     unknown = sorted(set(values) - set(names))
     if unknown:
@@ -406,7 +395,7 @@ def _theta_from_params(
 
     missing = [
         n for n in names
-        if n not in values and not (allow_missing_tfloor and n == "T_floor")
+        if n not in values and n not in defaults and not (allow_missing_tfloor and n == "T_floor")
     ]
     if missing:
         raise KeyError(f"Missing parameter(s) for model='{model}': {missing}. Required: {names}")
@@ -415,6 +404,8 @@ def _theta_from_params(
     for n in names:
         if n == "T_floor" and n not in values and allow_missing_tfloor:
             theta.append(_BOL_INTERNAL_T_FLOOR)
+        elif n not in values and n in defaults:
+            theta.append(float(defaults[n]))
         else:
             theta.append(float(values[n]))
     return tuple(theta)
@@ -459,6 +450,7 @@ def lightcurve_bol(
     Ny: int = 1000,
     t_max_days: float = 150.0,
 ) -> BolometricLC:
+    model = canonical_model_name(model, warn_legacy=True)
     ctx = _context_from_forward_inputs(
         z=z,
         DL_Mpc=None,
@@ -496,6 +488,7 @@ def predict_bol(
     t_max_days: float = 150.0,
     interp_fill: Literal["edge", "nan", "raise"] = "nan",
 ) -> np.ndarray:
+    model = canonical_model_name(model, warn_legacy=True)
     ctx = _context_from_forward_inputs(
         z=z,
         DL_Mpc=None,
@@ -542,6 +535,7 @@ def lightcurve_multiband(
     t_max_days: float = 150.0,
     sed=None,
 ) -> MultiBandLC:
+    model = canonical_model_name(model, warn_legacy=True)
     ctx = _context_from_forward_inputs(
         z=z,
         DL_Mpc=DL_Mpc,
@@ -611,6 +605,7 @@ def predict_multiband(
     interp_fill: Literal["edge", "nan", "raise"] = "nan",
     sed=None,
 ) -> np.ndarray:
+    model = canonical_model_name(model, warn_legacy=True)
     ctx = _context_from_forward_inputs(
         z=z,
         DL_Mpc=DL_Mpc,
@@ -1006,6 +1001,7 @@ def fit_multiband(
     sampler_kwargs: Optional[Dict[str, Any]] = None,
     model_kwargs: Optional[Dict[str, Any]] = None,
 ) -> FitResult:
+    model = canonical_model_name(model, warn_legacy=True)
     ctx = _context_from_fit_inputs(
         z=z,
         DL_Mpc=DL_Mpc,
@@ -1143,6 +1139,7 @@ def fit_bol(
     sampler_kwargs: Optional[Dict[str, Any]] = None,
     model_kwargs: Optional[Dict[str, Any]] = None,
 ) -> FitResult:
+    model = canonical_model_name(model, warn_legacy=True)
     if priors and "T_floor" in priors:
         raise ValueError(
             f"`T_floor` is not a bolometric fit parameter in `fit_bol()`. "

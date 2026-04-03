@@ -92,17 +92,18 @@ def _fast_time_loop_numba(
 
 class MagnetarModel:
     """
-    Pure magnetar model.
+    Canonical magnetar-powered model.
 
-    theta order:
-    (M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor)
+    Canonical theta order:
+    (M_ej, v_ej, E_Th_in, P_ms, B14, R_0, kappa0, kappa_gamma, T_floor)
 
-    Internal fixed values:
-    - E_Th_in = 0
-    - R_max_in = 1 R_sun
+    Backward compatibility:
+    - the old shorter pure-magnetar form
+      (M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor)
+      is still accepted and mapped to E_Th_in=0, R_0=1.
     """
 
-    _warmup_theta = (10.0, 1.0, 3.0, 1.0, 0.2, 0.03, 4000.0)
+    _warmup_theta = (10.0, 1.0, 1.0, 3.0, 1.0, 100.0, 0.2, 0.03, 4000.0)
     _warmup_kwargs = {"Nx": 10, "Ny": 20}
 
     def __init__(self, *, warmup: bool = False):
@@ -121,9 +122,18 @@ class MagnetarModel:
     def calculate_light_curve(self, theta, Nx=100, Ny=1000, t_max_days=150.0):
         pi, c, day = PI, C_LIGHT, DAY
 
-        (M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor) = theta
-        E_Th_in = 0.0
-        R_max_in = 1.0
+        theta = tuple(theta)
+        if len(theta) == 9:
+            (M_ej, v_ej, E_Th_in, P_ms, B14, R_max_in, kappa0, kappa_gamma, T_floor) = theta
+        elif len(theta) == 7:
+            (M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor) = theta
+            E_Th_in = 0.0
+            R_max_in = 1.0
+        else:
+            raise ValueError(
+                "MagnetarModel theta must have length 9 "
+                "(or legacy length 7 for the pure-magnetar form)."
+            )
 
         M_ej = float(M_ej) * M_SUN
         E_Th_in = float(E_Th_in) * 1.0e49

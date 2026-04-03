@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Optional, Tuple
 import numpy as np
 
+from ..model_registry import canonical_model_name
 from .common import UniformBoundsPrior, MixedBoundsPrior, apply_user_bounds
 
 
@@ -11,29 +12,17 @@ def build_bounds(
     priors: Optional[Dict[str, Tuple[float, float]]] = None,
     include_t_shift: bool = True,
 ):
-    m = model.lower().strip()
+    m = canonical_model_name(model, warn_legacy=False)
 
-    if m in ["ni", "nickel"]:
+    if m == "nickel":
         from .nickel import default_names_and_bounds
         names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
 
-    elif m in ["iib", "ii_b", "ii-b"]:
-        from .iib import default_names_and_bounds
-        names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
-
-    elif m in ["scni", "sc_ni", "sc-nickel", "shockcooling+ni"]:
-        from .sc_ni import default_names_and_bounds
-        names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
-
-    elif m in ["scmagnetar", "sc_magnetar", "sc-magnetar"]:
-        from .sc_magnetar import default_names_and_bounds
-        names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
-
-    elif m in ["magnetar", "mag", "mg"]:
+    elif m == "magnetar":
         from .magnetar import default_names_and_bounds
         names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
 
-    elif m in ["magni", "mag_ni", "mag-ni", "mag+ni", "magnetar+ni", "magnetar_ni", "magnetar-ni"]:
+    elif m == "magnetar_ni":
         from .magnetar_ni import default_names_and_bounds
         names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
 

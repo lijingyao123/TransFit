@@ -29,12 +29,59 @@ from transfit.modules.sed import BlackbodySED
 PARAMS_NI = {
     "M_ej": 3.0,
     "v_ej": 1.0,
+    "E_Th_in": 1.5,
+    "M_Ni": 0.08,
+    "R_0": 120.0,
+    "x_Ni": 0.2,
+    "kappa": 0.12,
+    "kappa_gamma": 0.03,
+    "T_floor": 3000.0,
+}
+
+LEGACY_PARAMS_NI = {
+    "M_ej": 3.0,
+    "v_ej": 1.0,
     "M_Ni": 0.08,
     "x_Ni": 0.2,
     "kappa": 0.12,
     "kappa_gamma": 0.03,
     "T_floor": 3000.0,
 }
+
+
+def test_public_nickel_and_magnetar_use_canonical_full_parameter_sets():
+    nickel_names = tf.model_param_names("nickel")
+    magnetar_names = tf.model_param_names("magnetar")
+
+    assert nickel_names == ["M_ej", "v_ej", "E_Th_in", "M_Ni", "R_0", "x_Ni", "kappa", "kappa_gamma", "T_floor"]
+    assert magnetar_names == ["M_ej", "v_ej", "E_Th_in", "P_ms", "B14", "R_0", "kappa", "kappa_gamma", "T_floor"]
+
+
+def test_removed_sc_alias_is_rejected():
+    with pytest.raises(ValueError):
+        tf.model_param_names("sc_ni")
+
+    with pytest.raises(ValueError):
+        tf.model_param_names("sc_magnetar")
+
+
+def test_legacy_short_nickel_param_dict_is_still_accepted_for_forward_calls():
+    out = tf.predict_multiband(
+        model="nickel",
+        params=LEGACY_PARAMS_NI,
+        DL_Mpc=7.5,
+        filters={"B": "johnson_cousins.B"},
+        t_days=np.array([1.0, 2.0], float),
+        band=np.array(["B", "B"], dtype=object),
+        y_kind="flux",
+        mag_system="ab",
+        Nx=20,
+        Ny=50,
+        t_max_days=5.0,
+    )
+
+    assert out.shape == (2,)
+    assert np.all(np.isfinite(out))
 
 
 def test_flux_output_is_independent_of_mag_system():
@@ -275,7 +322,9 @@ def test_explicit_distance_and_extinction_roundtrip(tmp_path):
         priors={
             "M_ej": (1.0, 5.0),
             "v_ej": (0.5, 2.0),
+            "E_Th_in": (0.05, 8.0),
             "M_Ni": (0.01, 0.2),
+            "R_0": (10.0, 400.0),
             "T_floor": (2000.0, 6000.0),
         },
         fixed={"x_Ni": 0.2, "kappa": 0.12, "kappa_gamma": 0.03, "t_shift": 0.0},

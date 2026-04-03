@@ -130,12 +130,18 @@ def _fast_time_loop_numba(
 
 class NickelModel:
     """
-    JIT-Accelerated Fast PDE light-curve model for supernovae.
-    - The entire time-evolution loop is JIT-compiled with Numba.
-    - Uses a custom Numba-jitted Thomas algorithm solver.
+    Canonical nickel-powered model.
+
+    Canonical theta order:
+    (M_ej, v_ej, E_Th_in, M_Ni, R_0, x_Ni, kappa0, kappa_gamma, T_floor)
+
+    Backward compatibility:
+    - the old shorter pure-nickel form
+      (M_ej, v_ej, M_Ni, x_Ni, kappa0, kappa_gamma, T_floor)
+      is still accepted and mapped to E_Th_in=0, R_0=10.
     """
 
-    _warmup_theta = (10.0, 1.0, 0.1, 0.5, 0.2, 0.03, 4000.0)
+    _warmup_theta = (5.0, 1.0, 1.0, 0.2, 100.0, 0.5, 0.2, 0.03, 4000.0)
     _warmup_kwargs = {"Nx": 10, "Ny": 20}
 
     def __init__(self, *, warmup: bool = False):
@@ -157,9 +163,18 @@ class NickelModel:
         eNi, eCo = EPSILON_NI, EPSILON_CO
         tau_Ni, tau_Co = TAU_NI, TAU_CO
 
-        (M_ej, v_ej, M_Ni, x_s, kappa0, kappa_gamma, T_floor) = theta
-        R_max_in = 10.0
-        E_Th_in = 0.0
+        theta = tuple(theta)
+        if len(theta) == 9:
+            (M_ej, v_ej, E_Th_in, M_Ni, R_max_in, x_s, kappa0, kappa_gamma, T_floor) = theta
+        elif len(theta) == 7:
+            (M_ej, v_ej, M_Ni, x_s, kappa0, kappa_gamma, T_floor) = theta
+            E_Th_in = 0.0
+            R_max_in = 10.0
+        else:
+            raise ValueError(
+                "NickelModel theta must have length 9 "
+                "(or legacy length 7 for the pure-nickel form)."
+            )
 
         M_ej = float(M_ej) * M_SUN
         E_Th_in = float(E_Th_in) * 1.0e49
