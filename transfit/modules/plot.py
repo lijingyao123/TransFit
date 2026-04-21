@@ -25,8 +25,6 @@ from typing import Any, Dict, Optional, Sequence, Tuple, Union, List, Literal
 import numpy as np
 import matplotlib.pyplot as plt
 
-from transfit.constants import MPC
-
 from .extinction import extinction_from_dict
 from .filters import filters_from_dict
 from .io import _ctx_to_dict, _validate_ctx_dict
@@ -157,13 +155,17 @@ def _forward_inputs_from_ctx_dict(
     if z is not None:
         z = float(z)
     DL_cm = dist.get("DL_cm", None)
-    DL_Mpc = None if DL_cm is None else float(DL_cm) / MPC
+    distance_modulus = None
+    if DL_cm is not None:
+        from ..api import _distance_modulus_from_cm
+
+        distance_modulus = _distance_modulus_from_cm(float(DL_cm))
     filters = filters_from_dict(dict(ctx_dict.get("filters", {}) or {}))
     phot = dict(ctx_dict.get("photometry", {}) or {})
     y_kind = str(phot.get("y_kind", "mag"))
     mag_system = str(phot.get("mag_system", "ab"))
     extinction = extinction_from_dict(ctx_dict.get("extinction"))
-    return z, DL_Mpc, filters, y_kind, mag_system, extinction
+    return z, distance_modulus, filters, y_kind, mag_system, extinction
 
 
 def _get_model_name(loaded: Dict[str, Any], fallback: Optional[str] = None) -> str:
@@ -577,7 +579,7 @@ def fit_multiband(
 
     ctx_dict = loaded.get("ctx", {}) or {}
     if ctx_dict:
-        z, DL_Mpc, filters, y_kind, mag_system, extinction = _forward_inputs_from_ctx_dict(ctx_dict)
+        z, distance_modulus, filters, y_kind, mag_system, extinction = _forward_inputs_from_ctx_dict(ctx_dict)
     else:
         raise ValueError("Stored forward metadata is required (not found in loaded result).")
 
@@ -638,7 +640,7 @@ def fit_multiband(
                 model=model_name,
                 theta=theta_0,
                 z=z,
-                DL_Mpc=DL_Mpc,
+                distance_modulus=distance_modulus,
                 filters=filters,
                 t_days=t_model_plot,
                 band=np.array([b] * len(t_plot), dtype=object),
@@ -670,7 +672,7 @@ def fit_multiband(
                             model=model_name,
                             theta=theta_j,
                             z=z,
-                            DL_Mpc=DL_Mpc,
+                            distance_modulus=distance_modulus,
                             filters=filters,
                             t_days=t_eval[valid],
                             band=np.array([b] * int(np.sum(valid)), dtype=object),

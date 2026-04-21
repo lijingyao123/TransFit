@@ -26,6 +26,7 @@
 </p>
 
 <p><strong>TransFit</strong> is a light-curve fitting framework for astronomical transients such as supernovae. It supports both forward modeling and Bayesian fitting, and its multi-band pipeline always computes observer-frame <code>f_nu</code> before applying extinction and converting to flux or magnitudes.</p>
+<p>All public time inputs and outputs use observer-frame days. Internal model evolution is still solved in rest-frame time and transformed by <code>(1+z)</code> before being exposed through the public API.</p>
 
 </td>
 </tr>
@@ -135,7 +136,7 @@ mb = tf.lightcurve_multiband(
     model="nickel",
     params=params_nickel,
     z=0.001728,
-    DL_Mpc=9.3,
+    distance_modulus=29.84,
     filters=filters,
     bands=["B", "V", "R", "I"],
     y_kind="mag",
@@ -253,7 +254,7 @@ res_mb = tf.fit_multiband(
     data=data_mb,
     model="nickel",
     z=0.001728,
-    DL_Mpc=9.3,
+    distance_modulus=29.84,
     filters=filters,
     y_kind="mag",
     mag_system="vega",

@@ -25,6 +25,8 @@ from transfit.modules.magnitudes import fnu_grid_to_vega_mag_grid
 from transfit.modules.photometry import evaluate_multiband_observer_output
 from transfit.modules.sed import BlackbodySED
 
+MU_7P5_MPC = 29.37530631695874
+
 
 PARAMS_NI = {
     "M_ej": 3.0,
@@ -69,7 +71,7 @@ def test_legacy_short_nickel_param_dict_is_still_accepted_for_forward_calls():
     out = tf.predict_multiband(
         model="nickel",
         params=LEGACY_PARAMS_NI,
-        DL_Mpc=7.5,
+        distance_modulus=MU_7P5_MPC,
         filters={"B": "johnson_cousins.B"},
         t_days=np.array([1.0, 2.0], float),
         band=np.array(["B", "B"], dtype=object),
@@ -84,6 +86,64 @@ def test_legacy_short_nickel_param_dict_is_still_accepted_for_forward_calls():
     assert np.all(np.isfinite(out))
 
 
+def test_bolometric_forward_tmax_is_public_observer_frame():
+    lc = tf.lightcurve_bol(
+        model="nickel",
+        params=LEGACY_PARAMS_NI,
+        z=1.0,
+        Nx=20,
+        Ny=50,
+        t_max_days=10.0,
+    )
+    pred = tf.predict_bol(
+        model="nickel",
+        params=LEGACY_PARAMS_NI,
+        z=1.0,
+        t_days=np.array([9.0, 11.0], float),
+        Nx=20,
+        Ny=50,
+        t_max_days=10.0,
+        interp_fill="nan",
+    )
+
+    assert float(np.nanmax(lc.t_days)) == pytest.approx(10.0)
+    assert np.isfinite(pred[0])
+    assert np.isnan(pred[1])
+
+
+def test_multiband_forward_tmax_is_public_observer_frame():
+    lc = tf.lightcurve_multiband(
+        model="nickel",
+        params=PARAMS_NI,
+        z=1.0,
+        distance_modulus=MU_7P5_MPC,
+        filters={"B": "johnson_cousins.B"},
+        bands=["B"],
+        y_kind="flux",
+        Nx=20,
+        Ny=50,
+        t_max_days=10.0,
+    )
+    pred = tf.predict_multiband(
+        model="nickel",
+        params=PARAMS_NI,
+        z=1.0,
+        distance_modulus=MU_7P5_MPC,
+        filters={"B": "johnson_cousins.B"},
+        t_days=np.array([9.0, 11.0], float),
+        band=np.array(["B", "B"], dtype=object),
+        y_kind="flux",
+        Nx=20,
+        Ny=50,
+        t_max_days=10.0,
+        interp_fill="nan",
+    )
+
+    assert float(np.nanmax(lc.t_days)) == pytest.approx(10.0)
+    assert np.isfinite(pred[0])
+    assert np.isnan(pred[1])
+
+
 def test_flux_output_is_independent_of_mag_system():
     t_days = np.array([1.0, 2.0, 3.0], float)
     band = np.array(["B", "B", "B"], dtype=object)
@@ -91,7 +151,7 @@ def test_flux_output_is_independent_of_mag_system():
     flux_ab = tf.predict_multiband(
         model="nickel",
         params=PARAMS_NI,
-        DL_Mpc=7.5,
+        distance_modulus=MU_7P5_MPC,
         filters={"B": "johnson_cousins.B"},
         t_days=t_days,
         band=band,
@@ -104,7 +164,7 @@ def test_flux_output_is_independent_of_mag_system():
     flux_vega = tf.predict_multiband(
         model="nickel",
         params=PARAMS_NI,
-        DL_Mpc=7.5,
+        distance_modulus=MU_7P5_MPC,
         filters={"B": "johnson_cousins.B"},
         t_days=t_days,
         band=band,
@@ -122,7 +182,7 @@ def test_public_multiband_signatures_hide_dl_cm():
     for func in (tf.lightcurve_multiband, tf.predict_multiband, tf.fit_multiband):
         params = inspect.signature(func).parameters
         assert "DL_cm" not in params
-        assert "DL_Mpc" in params
+        assert "DL_Mpc" not in params
         assert "distance_modulus" in params
 
 
@@ -243,7 +303,7 @@ def test_predict_multiband_accepts_structured_extinction():
     baseline = tf.predict_multiband(
         model="nickel",
         params=PARAMS_NI,
-        DL_Mpc=7.5,
+        distance_modulus=MU_7P5_MPC,
         filters={"V": "johnson_cousins.V"},
         t_days=t_days,
         band=band,
@@ -256,7 +316,7 @@ def test_predict_multiband_accepts_structured_extinction():
     reddened = tf.predict_multiband(
         model="nickel",
         params=PARAMS_NI,
-        DL_Mpc=7.5,
+        distance_modulus=MU_7P5_MPC,
         filters={"V": "johnson_cousins.V"},
         t_days=t_days,
         band=band,
@@ -292,7 +352,7 @@ def test_explicit_distance_and_extinction_roundtrip(tmp_path):
         model="nickel",
         params=PARAMS_NI,
         z=0.001728,
-        DL_Mpc=7.5,
+        distance_modulus=MU_7P5_MPC,
         filters={"B": "johnson_cousins.B", "V": "johnson_cousins.V"},
         bands=["B", "V"],
         y_kind="mag",
@@ -314,7 +374,7 @@ def test_explicit_distance_and_extinction_roundtrip(tmp_path):
         data=data,
         model="nickel",
         z=0.001728,
-        DL_Mpc=7.5,
+        distance_modulus=MU_7P5_MPC,
         filters={"B": "johnson_cousins.B", "V": "johnson_cousins.V"},
         y_kind="mag",
         mag_system="vega",

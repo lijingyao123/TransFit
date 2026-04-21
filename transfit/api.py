@@ -38,6 +38,11 @@ def _distance_cm_from_modulus(distance_modulus: float) -> float:
     return (10.0 ** ((float(distance_modulus) + 5.0) / 5.0)) * PC
 
 
+def _distance_modulus_from_cm(distance_cm: float) -> float:
+    d_pc = float(distance_cm) / PC
+    return 5.0 * np.log10(d_pc) - 5.0
+
+
 @dataclass(frozen=True)
 class _Distance:
     z: Optional[float] = None
@@ -69,32 +74,16 @@ class _Distance:
 def _distance_from_public_inputs(
     *,
     z: Optional[float],
-    DL_Mpc: Optional[float],
     distance_modulus: Optional[float],
     require_distance: bool,
 ) -> _Distance:
-    explicit = [
-        ("DL_Mpc", DL_Mpc),
-        ("distance_modulus", distance_modulus),
-    ]
-    supplied = [(name, value) for name, value in explicit if value is not None]
-    if len(supplied) > 1:
-        names = [name for name, _ in supplied]
-        raise ValueError(
-            "Provide at most one of `DL_Mpc` or `distance_modulus`, "
-            f"got: {names}"
-        )
-
     z_norm = None if z is None else float(z)
     if z_norm is not None and not np.isfinite(z_norm):
         raise ValueError("z must be finite when provided.")
 
     dl_norm = None
     source = None
-    if DL_Mpc is not None:
-        dl_norm = float(DL_Mpc) * MPC
-        source = "DL_Mpc"
-    elif distance_modulus is not None:
+    if distance_modulus is not None:
         dl_norm = _distance_cm_from_modulus(float(distance_modulus))
         source = "distance_modulus"
 
@@ -102,7 +91,7 @@ def _distance_from_public_inputs(
         raise ValueError("Explicit distance must be positive and finite.")
     if require_distance and z_norm is None and dl_norm is None:
         raise ValueError(
-            "Provide `z` or an explicit distance via `DL_Mpc` or `distance_modulus`."
+            "Provide `z` or an explicit distance via `distance_modulus`."
         )
     if source is None and z_norm is not None:
         source = "from_z"
@@ -130,7 +119,6 @@ def _effective_mag_system(y_kind: str, mag_system: str) -> str:
 def _context_from_fit_inputs(
     *,
     z: Optional[float],
-    DL_Mpc: Optional[float],
     distance_modulus: Optional[float],
     filters: Optional[Dict[str, Any]],
     y_kind: Literal["mag", "flux"],
@@ -153,7 +141,6 @@ def _context_from_fit_inputs(
     return _Context(
         distance=_distance_from_public_inputs(
             z=z,
-            DL_Mpc=DL_Mpc,
             distance_modulus=distance_modulus,
             require_distance=require_filters,
         ),
@@ -170,7 +157,6 @@ def _context_from_fit_inputs(
 def _context_from_forward_inputs(
     *,
     z: Optional[float],
-    DL_Mpc: Optional[float],
     distance_modulus: Optional[float],
     filters: Optional[Dict[str, Any]],
     y_kind: Literal["mag", "flux"],
@@ -192,7 +178,6 @@ def _context_from_forward_inputs(
     return _Context(
         distance=_distance_from_public_inputs(
             z=z,
-            DL_Mpc=DL_Mpc,
             distance_modulus=distance_modulus,
             require_distance=require_distance,
         ),
@@ -427,12 +412,21 @@ def _resolve_forward_theta(
     raise ValueError("Provide `params` for forward-model evaluation.")
 
 
-def _solve_state(engine, theta, *, Nx: int, Ny: int, t_max_days: float):
-    return engine.calculate_light_curve(theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
+def _observer_days_to_rest_days(t_days_obs: float, z: float) -> float:
+    """
+    Public APIs accept observer-frame day scales.
+    Internal engines solve in rest-frame / physical time.
+    """
+    return float(t_days_obs) / (1.0 + float(z))
+
+
+def _solve_state(engine, theta, *, Nx: int, Ny: int, t_max_days_obs: float, z: float):
+    t_max_days_rest = _observer_days_to_rest_days(t_max_days_obs, z)
+    return engine.calculate_light_curve(theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days_rest)
 
 
 def _t_grid_days_from_ts(t_s: np.ndarray, z: float) -> np.ndarray:
-    # Keep the current project convention for observer-frame time mapping.
+    # Public forward outputs use observer-frame days.
     return (np.asarray(t_s, float) * (1.0 + z)) / DAY
 
 
@@ -450,10 +444,15 @@ def lightcurve_bol(
     Ny: int = 1000,
     t_max_days: float = 150.0,
 ) -> BolometricLC:
+    """
+    Return a bolometric light curve on an observer-frame time grid.
+
+    User-facing time arguments are observer-frame days.
+    Internal model evolution is solved in rest-frame time.
+    """
     model = canonical_model_name(model, warn_legacy=True)
     ctx = _context_from_forward_inputs(
         z=z,
-        DL_Mpc=None,
         distance_modulus=None,
         filters=None,
         y_kind="mag",
@@ -464,9 +463,8 @@ def lightcurve_bol(
     )
     engine = _get_engine(model)
     theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=True)
-    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
-
     z = ctx.distance.get_z()
+    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
     t_days = _t_grid_days_from_ts(t_s, z=z)
     return BolometricLC(
         t_days=np.asarray(t_days, float),
@@ -488,10 +486,15 @@ def predict_bol(
     t_max_days: float = 150.0,
     interp_fill: Literal["edge", "nan", "raise"] = "nan",
 ) -> np.ndarray:
+    """
+    Predict a bolometric observable at observer-frame times `t_days`.
+
+    `t_days` and `t_max_days` are interpreted in observer-frame days.
+    Internal model evolution is solved in rest-frame time.
+    """
     model = canonical_model_name(model, warn_legacy=True)
     ctx = _context_from_forward_inputs(
         z=z,
-        DL_Mpc=None,
         distance_modulus=None,
         filters=None,
         y_kind="mag",
@@ -502,9 +505,8 @@ def predict_bol(
     )
     engine = _get_engine(model)
     theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=True)
-    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
-
     z = ctx.distance.get_z()
+    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
     t_grid_days = _t_grid_days_from_ts(t_s, z=z)
 
     # Lbol is strictly positive; log10 interpolation is more stable.
@@ -523,7 +525,6 @@ def lightcurve_multiband(
     params: Optional[Dict[str, Any]] = None,
     theta=None,
     z: Optional[float] = None,
-    DL_Mpc: Optional[float] = None,
     distance_modulus: Optional[float] = None,
     filters: Optional[Dict[str, Any]] = None,
     bands: Sequence[str],
@@ -535,10 +536,15 @@ def lightcurve_multiband(
     t_max_days: float = 150.0,
     sed=None,
 ) -> MultiBandLC:
+    """
+    Return a multi-band light curve on an observer-frame time grid.
+
+    User-facing time arguments are observer-frame days.
+    Internal model evolution is solved in rest-frame time.
+    """
     model = canonical_model_name(model, warn_legacy=True)
     ctx = _context_from_forward_inputs(
         z=z,
-        DL_Mpc=DL_Mpc,
         distance_modulus=distance_modulus,
         filters=filters,
         y_kind=y_kind,
@@ -564,9 +570,8 @@ def lightcurve_multiband(
 
     engine = _get_engine(model)
     theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=False)
-    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
-
     DL_cm = ctx.distance.get_DL_cm()
+    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
     t_days = _t_grid_days_from_ts(t_s, z=z)
     y_grid = evaluate_multiband_observer_output(
         sed=sed,
@@ -591,7 +596,6 @@ def predict_multiband(
     params: Optional[Dict[str, Any]] = None,
     theta=None,
     z: Optional[float] = None,
-    DL_Mpc: Optional[float] = None,
     distance_modulus: Optional[float] = None,
     filters: Optional[Dict[str, Any]] = None,
     t_days: np.ndarray,
@@ -605,10 +609,15 @@ def predict_multiband(
     interp_fill: Literal["edge", "nan", "raise"] = "nan",
     sed=None,
 ) -> np.ndarray:
+    """
+    Predict multi-band observables at observer-frame times `t_days`.
+
+    `t_days` and `t_max_days` are interpreted in observer-frame days.
+    Internal model evolution is solved in rest-frame time.
+    """
     model = canonical_model_name(model, warn_legacy=True)
     ctx = _context_from_forward_inputs(
         z=z,
-        DL_Mpc=DL_Mpc,
         distance_modulus=distance_modulus,
         filters=filters,
         y_kind=y_kind,
@@ -640,9 +649,8 @@ def predict_multiband(
 
     engine = _get_engine(model)
     theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=False)
-    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days)
-
     DL_cm = ctx.distance.get_DL_cm()
+    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
     t_grid_days = _t_grid_days_from_ts(t_s, z=z)
     y_grid = evaluate_multiband_observer_output(
         sed=sed,
@@ -989,7 +997,6 @@ def fit_multiband(
     data: MultiBandData,
     model: str,
     z: Optional[float] = None,
-    DL_Mpc: Optional[float] = None,
     distance_modulus: Optional[float] = None,
     filters: Optional[Dict[str, Any]] = None,
     y_kind: Literal["mag", "flux"] = "mag",
@@ -1004,7 +1011,6 @@ def fit_multiband(
     model = canonical_model_name(model, warn_legacy=True)
     ctx = _context_from_fit_inputs(
         z=z,
-        DL_Mpc=DL_Mpc,
         distance_modulus=distance_modulus,
         filters=filters,
         y_kind=y_kind,
@@ -1070,7 +1076,7 @@ def fit_multiband(
             model=model,
             theta=theta_model,
             z=ctx.distance.z,
-            DL_Mpc=None if ctx.distance.DL_cm is None else float(ctx.distance.DL_cm) / MPC,
+            distance_modulus=None if ctx.distance.DL_cm is None else _distance_modulus_from_cm(float(ctx.distance.DL_cm)),
             filters=filters,
             t_days=t_eval,
             band=band,
@@ -1153,7 +1159,6 @@ def fit_bol(
 
     ctx = _context_from_fit_inputs(
         z=z,
-        DL_Mpc=None,
         distance_modulus=None,
         filters=None,
         y_kind="mag",
