@@ -722,9 +722,39 @@ def _assemble_theta(
     fixed: Dict[str, float],
     names_all: List[str],
 ):
-    vals = dict(fixed)
-    vals.update({k: float(v) for k, v in zip(names_samp, np.asarray(sample_vec, float))})
+    vals = _param_values_from_sample(sample_vec, names_samp, fixed)
+    return _assemble_theta_from_values(vals, names_all)
 
+
+def _param_values_from_sample(
+    sample_vec: np.ndarray,
+    names_samp: List[str],
+    fixed: Dict[str, float],
+) -> Dict[str, float]:
+    vals = {str(k): float(v) for k, v in dict(fixed or {}).items()}
+    vals.update({str(k): float(v) for k, v in zip(names_samp, np.asarray(sample_vec, float))})
+    return vals
+
+
+def _physical_constraints_lnprior(vals: Dict[str, float]) -> float:
+    """
+    Model-independent physical constraints that cannot be expressed as
+    independent box priors.
+    """
+    if "M_Ni" in vals and "M_ej" in vals:
+        mej = float(vals["M_ej"])
+        mni = float(vals["M_Ni"])
+        if not (np.isfinite(mej) and np.isfinite(mni)):
+            return -np.inf
+        if mni > mej:
+            return -np.inf
+    return 0.0
+
+
+def _assemble_theta_from_values(
+    vals: Dict[str, float],
+    names_all: List[str],
+):
     t_shift = float(vals.get("t_shift", 0.0))
 
     theta_model: List[float] = []
@@ -1066,7 +1096,12 @@ def fit_multiband(
         if not np.isfinite(lp):
             return -np.inf
 
-        theta_model, t_shift = _assemble_theta(sample_vec, names_samp, fixed, names_all)
+        vals = _param_values_from_sample(sample_vec, names_samp, fixed)
+        lp_phys = _physical_constraints_lnprior(vals)
+        if not np.isfinite(lp_phys):
+            return -np.inf
+
+        theta_model, t_shift = _assemble_theta_from_values(vals, names_all)
         # Shift model time axis by t_shift and compare on observed t_obs.
         # Legacy convention:
         # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
@@ -1090,7 +1125,7 @@ def fit_multiband(
         if np.any(~np.isfinite(y_mod)):
             return -np.inf
 
-        return lp + gaussian_lnlike_for_observation(
+        return lp + lp_phys + gaussian_lnlike_for_observation(
             y_kind=ctx.y_kind,
             y_obs=y_obs,
             y_model=y_mod,
@@ -1202,7 +1237,12 @@ def fit_bol(
         if not np.isfinite(lp):
             return -np.inf
 
-        theta_model, t_shift = _assemble_theta(sample_vec, names_samp, fixed, names_all)
+        vals = _param_values_from_sample(sample_vec, names_samp, fixed)
+        lp_phys = _physical_constraints_lnprior(vals)
+        if not np.isfinite(lp_phys):
+            return -np.inf
+
+        theta_model, t_shift = _assemble_theta_from_values(vals, names_all)
         # Shift model time axis by t_shift and compare on observed t_obs.
         # Legacy convention:
         # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
@@ -1220,7 +1260,7 @@ def fit_bol(
         if np.any(~np.isfinite(y_mod)):
             return -np.inf
 
-        return lp + gaussian_lnlike_flux(y_obs, y_mod, y_err)
+        return lp + lp_phys + gaussian_lnlike_flux(y_obs, y_mod, y_err)
 
     samples, logp, meta, sampler_used = _run_sampler(
         sampler=sampler,

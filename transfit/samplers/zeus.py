@@ -202,9 +202,16 @@ def run_zeus(
             pool=pool,
         )
 
-        sampler.run_mcmc(p0, nsteps, progress=progress)
+        if burnin > 0:
+            # Match the emcee backend: burn-in is a separate warm-up phase,
+            # and nsteps is the length of the production chain.
+            sampler.run_mcmc(p0, burnin, progress=progress)
+            sampler.reset()
+            sampler.run_mcmc(None, nsteps, progress=progress)
+        else:
+            sampler.run_mcmc(p0, nsteps, progress=progress)
 
-        discard = max(0, burnin)
+        discard = 0
         chain = sampler.get_chain(discard=discard, thin=thin, flat=True)
         logp = sampler.get_log_prob(discard=discard, thin=thin, flat=True)
 

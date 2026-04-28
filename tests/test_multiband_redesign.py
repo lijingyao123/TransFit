@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 import transfit as tf
+from transfit.api import _physical_constraints_lnprior
 from transfit.constants import MPC
 from transfit.modules.extinction import (
     apply_extinction_to_fnu_grid,
@@ -24,6 +25,8 @@ from transfit.modules.likelihood import (
 from transfit.modules.magnitudes import fnu_grid_to_vega_mag_grid
 from transfit.modules.photometry import evaluate_multiband_observer_output
 from transfit.modules.sed import BlackbodySED
+from transfit.priors import MixedBoundsPrior
+from transfit.samplers import run_emcee, run_zeus
 
 MU_7P5_MPC = 29.37530631695874
 
@@ -65,6 +68,44 @@ def test_removed_sc_alias_is_rejected():
 
     with pytest.raises(ValueError):
         tf.model_param_names("sc_magnetar")
+
+
+def test_physical_constraints_reject_ni_mass_larger_than_ejecta():
+    assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 1.1}) == -np.inf
+    assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 1.0}) == pytest.approx(0.0)
+    assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 0.1}) == pytest.approx(0.0)
+
+
+def test_mcmc_backends_treat_nsteps_as_production_length():
+    pytest.importorskip("emcee")
+    pytest.importorskip("zeus")
+
+    prior = MixedBoundsPrior(
+        bounds=np.array([[-1.0, 1.0]], float),
+        param_names=["x"],
+    )
+
+    def lnprob(x):
+        x = np.asarray(x, float)
+        return -0.5 * float(np.sum(x * x))
+
+    common = dict(
+        lnprob=lnprob,
+        prior=prior,
+        nwalkers=8,
+        nsteps=6,
+        burnin=3,
+        thin=1,
+        seed=2,
+        init="prior",
+        robust_init=False,
+        progress=False,
+    )
+    samples_emcee, _, _ = run_emcee(**common)
+    samples_zeus, _, _ = run_zeus(**common)
+
+    assert samples_emcee.shape == (8 * 6, 1)
+    assert samples_zeus.shape == (8 * 6, 1)
 
 
 def test_legacy_short_nickel_param_dict_is_still_accepted_for_forward_calls():
