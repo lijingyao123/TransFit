@@ -1,6 +1,0 @@
-{
-    "jupyter.interactiveWindow.creationMode": "single",
-    "jupyter.interactiveWindow.notebookRepl": false,
-    "jupyter.widgetScriptSources": [],
-    "python.analysis.autoImportCompletions": true
-}
