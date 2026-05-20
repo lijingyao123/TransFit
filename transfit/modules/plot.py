@@ -259,9 +259,9 @@ def _paramdict_best_sample(
     return vals
 
 
-def _theta_from_paramdict(loaded: Dict[str, Any], p: Dict[str, float]) -> Tuple[Tuple[float, ...], float]:
+def _params_and_shift_from_paramdict(loaded: Dict[str, Any], p: Dict[str, float]) -> Tuple[Dict[str, float], float]:
     """
-    theta tuple in the order of all_param_names excluding t_shift; and t_shift.
+    Model parameter dict, excluding t_shift, plus the fitted time shift.
     If all_param_names is missing, fallback to param_names order.
     """
     all_names = [str(x) for x in loaded.get("all_param_names", []) if str(x)]
@@ -270,14 +270,13 @@ def _theta_from_paramdict(loaded: Dict[str, Any], p: Dict[str, float]) -> Tuple[
 
     t_shift = float(p.get("t_shift", 0.0))
 
-    theta_names = [n for n in all_names if n != "t_shift"]
-    theta: List[float] = []
-    for n in theta_names:
+    model_params: Dict[str, float] = {}
+    for n in [name for name in all_names if name != "t_shift"]:
         if n not in p:
-            raise KeyError(f"Parameter '{n}' missing when building theta. Check all_param_names/fixed/param_names.")
-        theta.append(float(p[n]))
+            raise KeyError(f"Parameter '{n}' missing when building model parameters. Check all_param_names/fixed/param_names.")
+        model_params[n] = float(p[n])
 
-    return tuple(theta), t_shift
+    return model_params, t_shift
 
 
 # -----------------------------------------------------------------------------
@@ -435,7 +434,7 @@ def fit_bol(
         model_label = "median model"
     else:
         raise ValueError("summary must be 'best' or 'median'.")
-    theta_0, t_shift_0 = _theta_from_paramdict(loaded, p0)
+    params_0, t_shift_0 = _params_and_shift_from_paramdict(loaded, p0)
 
     # Plot from model time zero, then map to observed-time axis with t_shift.
     # Legacy convention in fitting:
@@ -456,7 +455,7 @@ def fit_bol(
 
         y_line = predict_bol(
             model=model_name,
-            theta=theta_0,
+            params=params_0,
             z=z,
             t_days=t_model_plot,
             interp_fill=interp_fill_model,
@@ -493,14 +492,14 @@ def fit_bol(
                 p = dict(fixed)
                 for i, name in enumerate(pnames):
                     p[name] = float(subset[j, i])
-                theta_j, tshift_j = _theta_from_paramdict(loaded, p)
+                params_j, tshift_j = _params_and_shift_from_paramdict(loaded, p)
                 t_eval = t_plot + tshift_j
                 yj = np.full_like(t_plot, np.nan, dtype=float)
                 valid = t_eval >= 0.0
                 if np.any(valid):
                     yj[valid] = predict_bol(
                         model=model_name,
-                        theta=theta_j,
+                        params=params_j,
                         z=z,
                         t_days=t_eval[valid],
                         interp_fill=interp_fill_model,
@@ -601,7 +600,7 @@ def fit_multiband(
         model_tag = "median"
     else:
         raise ValueError("summary must be 'best' or 'median'.")
-    theta_0, t_shift_0 = _theta_from_paramdict(loaded, p0)
+    params_0, t_shift_0 = _params_and_shift_from_paramdict(loaded, p0)
 
     t_obs = np.asarray(data.t_days, float).reshape(-1)
     model_t_max = max(float(np.nanmax(t_obs) + t_shift_0), 0.0) + float(t_pad)
@@ -638,7 +637,7 @@ def fit_multiband(
             # Keep x-axis in observed time and shift model time axis by t_shift.
             y_line = predict_multiband(
                 model=model_name,
-                theta=theta_0,
+                params=params_0,
                 z=z,
                 distance_modulus=distance_modulus,
                 filters=filters,
@@ -663,14 +662,14 @@ def fit_multiband(
                     p = dict(fixed)
                     for i, name in enumerate(pnames):
                         p[name] = float(subset[j, i])
-                    theta_j, tshift_j = _theta_from_paramdict(loaded, p)
+                    params_j, tshift_j = _params_and_shift_from_paramdict(loaded, p)
                     t_eval = t_plot + tshift_j
                     yj = np.full_like(t_plot, np.nan, dtype=float)
                     valid = t_eval >= 0.0
                     if np.any(valid):
                         yj[valid] = predict_multiband(
                             model=model_name,
-                            theta=theta_j,
+                            params=params_j,
                             z=z,
                             distance_modulus=distance_modulus,
                             filters=filters,

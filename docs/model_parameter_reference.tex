@@ -26,28 +26,32 @@
 \midrule
 \endhead
 \texttt{nickel} &
-Ni-powered model &
-\texttt{(M\_ej, v\_ej, M\_Ni, x\_Ni, kappa, kappa\_gamma, T\_floor)} \\
-
-\texttt{sc\_ni} &
-Shock-cooling + Ni &
+Ni-powered diffusion model with optional initial thermal energy &
 \texttt{(M\_ej, v\_ej, E\_Th\_in, M\_Ni, R\_0, x\_Ni, kappa, kappa\_gamma, T\_floor)} \\
 
 \texttt{magnetar} &
-Pure magnetar &
-\texttt{(M\_ej, v\_ej, P\_ms, B14, kappa, kappa\_gamma, T\_floor)} \\
+Magnetar-powered diffusion model with optional initial thermal energy &
+\texttt{(M\_ej, v\_ej, E\_Th\_in, P\_ms, B14, R\_0, kappa, kappa\_gamma, T\_floor)} \\
 
 \texttt{magnetar\_ni} &
 Magnetar + Ni &
 \texttt{(M\_ej, v\_ej, P\_ms, B14, M\_Ni, kappa, kappa\_gamma, T\_floor)} \\
-
-\texttt{sc\_magnetar} &
-Shock-cooling + magnetar &
-\texttt{(M\_ej, v\_ej, E\_Th\_in, P\_ms, B14, R\_0, kappa, kappa\_gamma, T\_floor)} \\
 \bottomrule
 \end{longtable}
 
-Compatibility aliases are still accepted internally, but the names above are the recommended public API.
+Compatibility aliases such as \texttt{ni}, \texttt{mag}, and \texttt{magni} are accepted, but the names above are the recommended public API. The old \texttt{sc\_ni} and \texttt{sc\_magnetar} keys are no longer public model names.
+
+\section*{Legacy Forward-Call Short Forms}
+
+For backward compatibility, forward-model helpers still accept shorter \texttt{params} dicts for some models:
+
+\begin{itemize}
+  \item \texttt{nickel}: omitting \texttt{E\_Th\_in} and \texttt{R\_0} maps them to \texttt{0} and \texttt{10 R\_sun};
+  \item \texttt{magnetar}: omitting \texttt{E\_Th\_in} and \texttt{R\_0} maps them to \texttt{0} and \texttt{1 R\_sun};
+  \item bolometric forward helpers may omit \texttt{T\_floor}; TransFit then uses an internal numerical floor.
+\end{itemize}
+
+Fitting APIs use the canonical parameter sets above, except that \texttt{fit\_bol()} keeps \texttt{T\_floor} internal and does not fit it.
 
 \section*{Parameter Glossary}
 
@@ -69,6 +73,20 @@ Compatibility aliases are still accepted internally, but the names above are the
 \texttt{t\_shift} & Time offset between model and observed timeline & \texttt{day} \\
 \bottomrule
 \end{tabularx}
+
+\section*{Physical Parameter Constraints}
+
+TransFit validates public forward calls and fit-time fixed/sampled values against these model-independent constraints before using them in the solver:
+
+\begin{itemize}
+  \item \texttt{M\_ej}, \texttt{v\_ej}, \texttt{R\_0}, \texttt{kappa}, \texttt{kappa\_gamma}, \texttt{T\_floor}, \texttt{P\_ms}, and \texttt{B14} must be finite and strictly positive;
+  \item \texttt{E\_Th\_in} and \texttt{M\_Ni} must be finite and non-negative;
+  \item \texttt{x\_Ni} must be finite and in \texttt{[0, 1]};
+  \item if both are present, \texttt{M\_Ni <= M\_ej};
+  \item \texttt{t\_shift} must be finite.
+\end{itemize}
+
+The solver output is also checked before interpolation or photometry. Non-positive or non-finite \texttt{Lbol}, \texttt{Teff}, or \texttt{Rph} values are rejected instead of being silently clipped into log-space interpolation.
 
 \section*{\texttt{t\_shift} Convention}
 

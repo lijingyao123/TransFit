@@ -27,6 +27,10 @@ from transfit.constants import DAY, MPC, PC
 _BOL_INTERNAL_T_FLOOR = 1000.0
 
 
+class _NonPhysicalModelOutput(ValueError):
+    """Raised when a solved model state is not usable as a physical prediction."""
+
+
 def _cosmo_luminosity_distance_cm(z: float) -> float:
     from astropy.cosmology import Planck15 as cosmo
     import astropy.units as u
@@ -282,68 +286,6 @@ def _get_engine(model: str):
     raise ValueError(f"Unknown model='{model}'")
 
 
-def _normalize_theta(model: str, theta, *, allow_missing_tfloor: bool):
-    """
-    Allow omitting T_floor in forward-model calls by appending the internal
-    numerical floor used for bolometric-only evaluation.
-    This keeps backward compatibility with shorter theta in examples.
-    """
-    m = canonical_model_name(model, warn_legacy=False)
-    theta_t = tuple(theta)
-
-    if m == "nickel":
-        expected = 9
-        legacy = 7
-        if len(theta_t) == expected:
-            return theta_t
-        if len(theta_t) == expected - 1:
-            if not allow_missing_tfloor:
-                raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (*theta_t, _BOL_INTERNAL_T_FLOOR)
-        if len(theta_t) == legacy:
-            return (theta_t[0], theta_t[1], 0.0, theta_t[2], 10.0, theta_t[3], theta_t[4], theta_t[5], theta_t[6])
-        if len(theta_t) == legacy - 1:
-            if not allow_missing_tfloor:
-                raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (theta_t[0], theta_t[1], 0.0, theta_t[2], 10.0, theta_t[3], theta_t[4], theta_t[5], _BOL_INTERNAL_T_FLOOR)
-        raise ValueError(
-            f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor; "
-            f"legacy {legacy}/{legacy-1} forms are also accepted)"
-        )
-
-    if m == "magnetar":
-        expected = 9
-        legacy = 7
-        if len(theta_t) == expected:
-            return theta_t
-        if len(theta_t) == expected - 1:
-            if not allow_missing_tfloor:
-                raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (*theta_t, _BOL_INTERNAL_T_FLOOR)
-        if len(theta_t) == legacy:
-            return (theta_t[0], theta_t[1], 0.0, theta_t[2], theta_t[3], 1.0, theta_t[4], theta_t[5], theta_t[6])
-        if len(theta_t) == legacy - 1:
-            if not allow_missing_tfloor:
-                raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (theta_t[0], theta_t[1], 0.0, theta_t[2], theta_t[3], 1.0, theta_t[4], theta_t[5], _BOL_INTERNAL_T_FLOOR)
-        raise ValueError(
-            f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor; "
-            f"legacy {legacy}/{legacy-1} forms are also accepted)"
-        )
-
-    if m == "magnetar_ni":
-        expected = 8
-        if len(theta_t) == expected - 1:
-            if not allow_missing_tfloor:
-                raise ValueError(f"theta for model='{model}' must have length {expected}")
-            return (*theta_t, _BOL_INTERNAL_T_FLOOR)
-        if len(theta_t) != expected:
-            raise ValueError(f"theta for model='{model}' must have length {expected} (or {expected-1} without T_floor)")
-        return theta_t
-
-    return theta_t
-
-
 def model_param_names(model: str, *, include_t_shift: bool = False) -> List[str]:
     model = canonical_model_name(model, warn_legacy=True)
     names, _ = build_bounds(model, include_t_shift=include_t_shift)
@@ -360,7 +302,7 @@ def param_template(
     return {name: fill_value for name in model_param_names(model, include_t_shift=include_t_shift)}
 
 
-def _theta_from_params(
+def _model_vector_from_params(
     model: str,
     params: Dict[str, Any],
     *,
@@ -387,30 +329,82 @@ def _theta_from_params(
     if missing:
         raise KeyError(f"Missing parameter(s) for model='{model}': {missing}. Required: {names}")
 
-    theta = []
+    model_vector = []
     for n in names:
         if n == "T_floor" and n not in values and allow_missing_tfloor:
-            theta.append(_BOL_INTERNAL_T_FLOOR)
+            model_vector.append(_BOL_INTERNAL_T_FLOOR)
         elif n not in values and n in defaults:
-            theta.append(float(defaults[n]))
+            model_vector.append(float(defaults[n]))
         else:
-            theta.append(float(values[n]))
-    return tuple(theta)
+            model_vector.append(float(values[n]))
+    return tuple(model_vector)
 
 
-def _resolve_forward_theta(
+_NONNEGATIVE_PARAMS = {"E_Th_in", "M_Ni"}
+_POSITIVE_PARAMS = {"M_ej", "v_ej", "R_0", "kappa", "kappa_gamma", "T_floor", "P_ms", "B14"}
+_UNIT_INTERVAL_PARAMS = {"x_Ni"}
+
+
+def _model_values_from_vector(model: str, model_vector) -> Dict[str, float]:
+    names = model_param_names(model, include_t_shift=False)
+    values_t = tuple(model_vector)
+    if len(values_t) != len(names):
+        raise ValueError(
+            f"Model parameter vector for model='{model}' must have length {len(names)}."
+        )
+    return {str(n): float(v) for n, v in zip(names, values_t)}
+
+
+def _physical_constraint_reason(vals: Dict[str, float]) -> Optional[str]:
+    """
+    Return a short reason when a parameter set violates model-independent
+    physical constraints, otherwise None.
+    """
+    values = {str(k): float(v) for k, v in dict(vals or {}).items()}
+
+    for name, value in values.items():
+        if not np.isfinite(value):
+            return f"{name} must be finite."
+
+    for name in sorted(_POSITIVE_PARAMS & set(values)):
+        if not (values[name] > 0.0):
+            return f"{name} must be > 0."
+
+    for name in sorted(_NONNEGATIVE_PARAMS & set(values)):
+        if not (values[name] >= 0.0):
+            return f"{name} must be >= 0."
+
+    for name in sorted(_UNIT_INTERVAL_PARAMS & set(values)):
+        if not (0.0 <= values[name] <= 1.0):
+            return f"{name} must be in [0, 1]."
+
+    if "M_Ni" in values and "M_ej" in values:
+        if values["M_Ni"] > values["M_ej"]:
+            return "M_Ni must be <= M_ej."
+
+    return None
+
+
+def _validate_physical_values(vals: Dict[str, float]) -> None:
+    reason = _physical_constraint_reason(vals)
+    if reason is not None:
+        raise ValueError(f"Physical parameter constraints are invalid: {reason}")
+
+
+def _validate_physical_model_vector(model: str, model_vector) -> None:
+    _validate_physical_values(_model_values_from_vector(model, model_vector))
+
+
+def _resolve_forward_params(
     model: str,
     *,
     params: Optional[Dict[str, Any]],
-    theta,
     allow_missing_tfloor: bool,
 ):
-    if params is not None and theta is not None:
-        raise ValueError("Provide either `params` or `theta`, not both.")
     if params is not None:
-        return _theta_from_params(model, params, allow_missing_tfloor=allow_missing_tfloor)
-    if theta is not None:
-        return _normalize_theta(model, theta, allow_missing_tfloor=allow_missing_tfloor)
+        model_vector = _model_vector_from_params(model, params, allow_missing_tfloor=allow_missing_tfloor)
+        _validate_physical_model_vector(model, model_vector)
+        return model_vector
     raise ValueError("Provide `params` for forward-model evaluation.")
 
 
@@ -422,9 +416,27 @@ def _observer_days_to_rest_days(t_days_obs: float, z: float) -> float:
     return float(t_days_obs) / (1.0 + float(z))
 
 
-def _solve_state(engine, theta, *, Nx: int, Ny: int, t_max_days_obs: float, z: float):
+def _solve_state(engine, model_vector, *, Nx: int, Ny: int, t_max_days_obs: float, z: float):
     t_max_days_rest = _observer_days_to_rest_days(t_max_days_obs, z)
-    return engine.calculate_light_curve(theta, Nx=Nx, Ny=Ny, t_max_days=t_max_days_rest)
+    return engine.calculate_light_curve(model_vector, Nx=Nx, Ny=Ny, t_max_days=t_max_days_rest)
+
+
+def _require_positive_finite(name: str, arr: np.ndarray) -> None:
+    values = np.asarray(arr, float)
+    if values.size == 0:
+        raise _NonPhysicalModelOutput(f"Model produced an empty {name} grid.")
+    bad = ~np.isfinite(values) | (values <= 0.0)
+    if np.any(bad):
+        first = float(values.reshape(-1)[int(np.where(bad.reshape(-1))[0][0])])
+        raise _NonPhysicalModelOutput(
+            f"Model produced non-positive or non-finite {name}; first invalid value is {first!r}."
+        )
+
+
+def _validate_solved_state(Lbol, Teff, Rph) -> None:
+    _require_positive_finite("Lbol", Lbol)
+    _require_positive_finite("Teff", Teff)
+    _require_positive_finite("Rph", Rph)
 
 
 def _t_grid_days_from_ts(t_s: np.ndarray, z: float) -> np.ndarray:
@@ -440,7 +452,6 @@ def lightcurve_bol(
     *,
     model: str,
     params: Optional[Dict[str, Any]] = None,
-    theta=None,
     z: Optional[float] = None,
     Nx: int = 100,
     Ny: int = 1000,
@@ -464,9 +475,10 @@ def lightcurve_bol(
         require_distance=False,
     )
     engine = _get_engine(model)
-    theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=True)
+    model_vector = _resolve_forward_params(model, params=params, allow_missing_tfloor=True)
     z = ctx.distance.get_z()
-    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    t_s, Lbol, Teff, Rph = _solve_state(engine, model_vector, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    _validate_solved_state(Lbol, Teff, Rph)
     t_days = _t_grid_days_from_ts(t_s, z=z)
     return BolometricLC(
         t_days=np.asarray(t_days, float),
@@ -480,7 +492,6 @@ def predict_bol(
     *,
     model: str,
     params: Optional[Dict[str, Any]] = None,
-    theta=None,
     z: Optional[float] = None,
     t_days: np.ndarray,
     Nx: int = 100,
@@ -506,9 +517,10 @@ def predict_bol(
         require_distance=False,
     )
     engine = _get_engine(model)
-    theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=True)
+    model_vector = _resolve_forward_params(model, params=params, allow_missing_tfloor=True)
     z = ctx.distance.get_z()
-    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    t_s, Lbol, Teff, Rph = _solve_state(engine, model_vector, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    _validate_solved_state(Lbol, Teff, Rph)
     t_grid_days = _t_grid_days_from_ts(t_s, z=z)
 
     # Lbol is strictly positive; log10 interpolation is more stable.
@@ -525,7 +537,6 @@ def lightcurve_multiband(
     *,
     model: str,
     params: Optional[Dict[str, Any]] = None,
-    theta=None,
     z: Optional[float] = None,
     distance_modulus: Optional[float] = None,
     filters: Optional[Dict[str, Any]] = None,
@@ -571,9 +582,10 @@ def lightcurve_multiband(
     )
 
     engine = _get_engine(model)
-    theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=False)
+    model_vector = _resolve_forward_params(model, params=params, allow_missing_tfloor=False)
     DL_cm = ctx.distance.get_DL_cm()
-    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    t_s, Lbol, Teff, Rph = _solve_state(engine, model_vector, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    _validate_solved_state(Lbol, Teff, Rph)
     t_days = _t_grid_days_from_ts(t_s, z=z)
     y_grid = evaluate_multiband_observer_output(
         sed=sed,
@@ -596,7 +608,6 @@ def predict_multiband(
     *,
     model: str,
     params: Optional[Dict[str, Any]] = None,
-    theta=None,
     z: Optional[float] = None,
     distance_modulus: Optional[float] = None,
     filters: Optional[Dict[str, Any]] = None,
@@ -650,9 +661,10 @@ def predict_multiband(
     )
 
     engine = _get_engine(model)
-    theta = _resolve_forward_theta(model, params=params, theta=theta, allow_missing_tfloor=False)
+    model_vector = _resolve_forward_params(model, params=params, allow_missing_tfloor=False)
     DL_cm = ctx.distance.get_DL_cm()
-    t_s, Lbol, Teff, Rph = _solve_state(engine, theta, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    t_s, Lbol, Teff, Rph = _solve_state(engine, model_vector, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    _validate_solved_state(Lbol, Teff, Rph)
     t_grid_days = _t_grid_days_from_ts(t_s, z=z)
     y_grid = evaluate_multiband_observer_output(
         sed=sed,
@@ -718,14 +730,14 @@ def _split_sampling(
     return names_samp, np.asarray(bounds_samp, float), fixed
 
 
-def _assemble_theta(
+def _assemble_model_params(
     sample_vec: np.ndarray,
     names_samp: List[str],
     fixed: Dict[str, float],
     names_all: List[str],
 ):
     vals = _param_values_from_sample(sample_vec, names_samp, fixed)
-    return _assemble_theta_from_values(vals, names_all)
+    return _assemble_model_params_from_values(vals, names_all)
 
 
 def _param_values_from_sample(
@@ -743,28 +755,22 @@ def _physical_constraints_lnprior(vals: Dict[str, float]) -> float:
     Model-independent physical constraints that cannot be expressed as
     independent box priors.
     """
-    if "M_Ni" in vals and "M_ej" in vals:
-        mej = float(vals["M_ej"])
-        mni = float(vals["M_Ni"])
-        if not (np.isfinite(mej) and np.isfinite(mni)):
-            return -np.inf
-        if mni > mej:
-            return -np.inf
-    return 0.0
+    return -np.inf if _physical_constraint_reason(vals) is not None else 0.0
 
 
 def _validate_fixed_physical_constraints(fixed: Dict[str, float]) -> None:
-    if not np.isfinite(_physical_constraints_lnprior(fixed)):
-        raise ValueError("Fixed physical constraints are invalid: M_Ni must be <= M_ej.")
+    reason = _physical_constraint_reason(fixed)
+    if reason is not None:
+        raise ValueError(f"Fixed physical constraints are invalid: {reason}")
 
 
-def _assemble_theta_from_values(
+def _assemble_model_params_from_values(
     vals: Dict[str, float],
     names_all: List[str],
 ):
     t_shift = float(vals.get("t_shift", 0.0))
 
-    theta_model: List[float] = []
+    model_params: Dict[str, float] = {}
     for n in names_all:
         if n == "t_shift":
             continue
@@ -773,9 +779,9 @@ def _assemble_theta_from_values(
                 f"Missing parameter '{n}'. "
                 f"Either provide it in priors (to sample) or in fixed."
             )
-        theta_model.append(float(vals[n]))
+        model_params[str(n)] = float(vals[n])
 
-    return tuple(theta_model), t_shift
+    return model_params, t_shift
 
 
 def _apply_log10_priors(
@@ -1109,26 +1115,29 @@ def fit_multiband(
         if not np.isfinite(lp_phys):
             return -np.inf
 
-        theta_model, t_shift = _assemble_theta_from_values(vals, names_all)
+        model_params, t_shift = _assemble_model_params_from_values(vals, names_all)
         # Shift model time axis by t_shift and compare on observed t_obs.
         # Legacy convention:
         # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
         t_eval = t_obs + t_shift
 
-        y_mod = predict_multiband(
-            model=model,
-            theta=theta_model,
-            z=ctx.distance.z,
-            distance_modulus=None if ctx.distance.DL_cm is None else _distance_modulus_from_cm(float(ctx.distance.DL_cm)),
-            filters=filters,
-            t_days=t_eval,
-            band=band,
-            y_kind=ctx.y_kind,
-            mag_system=ctx.mag_system,
-            extinction=extinction_spec,
-            interp_fill=interp_fill_fit,
-            **model_kwargs_pred,
-        )
+        try:
+            y_mod = predict_multiband(
+                model=model,
+                params=model_params,
+                z=ctx.distance.z,
+                distance_modulus=None if ctx.distance.DL_cm is None else _distance_modulus_from_cm(float(ctx.distance.DL_cm)),
+                filters=filters,
+                t_days=t_eval,
+                band=band,
+                y_kind=ctx.y_kind,
+                mag_system=ctx.mag_system,
+                extinction=extinction_spec,
+                interp_fill=interp_fill_fit,
+                **model_kwargs_pred,
+            )
+        except _NonPhysicalModelOutput:
+            return -np.inf
 
         if np.any(~np.isfinite(y_mod)):
             return -np.inf
@@ -1251,20 +1260,23 @@ def fit_bol(
         if not np.isfinite(lp_phys):
             return -np.inf
 
-        theta_model, t_shift = _assemble_theta_from_values(vals, names_all)
+        model_params, t_shift = _assemble_model_params_from_values(vals, names_all)
         # Shift model time axis by t_shift and compare on observed t_obs.
         # Legacy convention:
         # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
         t_eval = t_obs + t_shift
 
-        y_mod = predict_bol(
-            model=model,
-            theta=theta_model,
-            z=ctx.distance.get_z(),
-            t_days=t_eval,
-            interp_fill=interp_fill_fit,
-            **model_kwargs_pred,
-        )
+        try:
+            y_mod = predict_bol(
+                model=model,
+                params=model_params,
+                z=ctx.distance.get_z(),
+                t_days=t_eval,
+                interp_fill=interp_fill_fit,
+                **model_kwargs_pred,
+            )
+        except _NonPhysicalModelOutput:
+            return -np.inf
 
         if np.any(~np.isfinite(y_mod)):
             return -np.inf

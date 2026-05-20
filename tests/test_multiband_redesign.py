@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import inspect
+import warnings
 import numpy as np
 import pytest
 
 import transfit as tf
+import transfit.api as api
 from transfit.api import _physical_constraints_lnprior
 from transfit.constants import MPC
 from transfit.modules.extinction import (
@@ -29,6 +31,7 @@ from transfit.priors import MixedBoundsPrior
 from transfit.samplers import run_emcee, run_zeus
 
 MU_7P5_MPC = 29.37530631695874
+MU_Z1_PLANCK15 = api._distance_modulus_from_cm(api._cosmo_luminosity_distance_cm(1.0))
 
 
 PARAMS_NI = {
@@ -60,6 +63,31 @@ def test_public_nickel_and_magnetar_use_canonical_full_parameter_sets():
 
     assert nickel_names == ["M_ej", "v_ej", "E_Th_in", "M_Ni", "R_0", "x_Ni", "kappa", "kappa_gamma", "T_floor"]
     assert magnetar_names == ["M_ej", "v_ej", "E_Th_in", "P_ms", "B14", "R_0", "kappa", "kappa_gamma", "T_floor"]
+
+
+def test_public_forward_signatures_use_params_not_theta():
+    for func in (tf.lightcurve_bol, tf.predict_bol, tf.lightcurve_multiband, tf.predict_multiband):
+        params = inspect.signature(func).parameters
+        assert "params" in params
+        assert "theta" not in params
+
+
+def test_fit_result_no_longer_exposes_theta_properties():
+    res = api.FitResult(
+        model="nickel",
+        ctx=None,
+        sampler="fake",
+        param_names=["M_ej", "t_shift"],
+        fixed={},
+        all_param_names=["M_ej", "t_shift"],
+        samples=np.array([[2.0, 1.25]], float),
+        log_prob=np.array([0.0], float),
+        meta={},
+    )
+
+    assert not hasattr(res, "best_theta")
+    assert not hasattr(res, "best_theta_and_shift")
+    assert res.best_t_shift == pytest.approx(1.25)
 
 
 def test_removed_sc_alias_is_rejected():
@@ -101,6 +129,97 @@ def test_physical_constraints_reject_ni_mass_larger_than_ejecta():
     assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 1.1}) == -np.inf
     assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 1.0}) == pytest.approx(0.0)
     assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 0.1}) == pytest.approx(0.0)
+    assert _physical_constraints_lnprior({"kappa": -0.1}) == -np.inf
+    assert _physical_constraints_lnprior({"kappa_gamma": 0.0}) == -np.inf
+    assert _physical_constraints_lnprior({"x_Ni": 1.1}) == -np.inf
+    assert _physical_constraints_lnprior({"T_floor": np.nan}) == -np.inf
+
+
+def test_public_forward_rejects_nonphysical_parameters_before_solving():
+    bad = dict(PARAMS_NI)
+    bad["x_Ni"] = 1.1
+    with pytest.raises(ValueError, match="x_Ni must be in \\[0, 1\\]"):
+        tf.lightcurve_bol(
+            model="nickel",
+            params=bad,
+            Nx=20,
+            Ny=50,
+            t_max_days=5.0,
+        )
+
+    bad = dict(PARAMS_NI)
+    bad["kappa"] = -0.12
+    with pytest.raises(ValueError, match="kappa must be > 0"):
+        tf.predict_bol(
+            model="nickel",
+            params=bad,
+            t_days=np.array([1.0], float),
+            Nx=20,
+            Ny=50,
+            t_max_days=5.0,
+        )
+
+
+def test_public_forward_rejects_nonphysical_solver_output(monkeypatch):
+    def fake_solve_state(engine, theta, *, Nx, Ny, t_max_days_obs, z):
+        return (
+            np.array([1.0, 2.0], float),
+            np.array([1.0e41, -1.0e40], float),
+            np.array([6000.0, 6000.0], float),
+            np.array([1.0e14, 1.1e14], float),
+        )
+
+    monkeypatch.setattr(api, "_solve_state", fake_solve_state)
+    with pytest.raises(ValueError, match="non-positive or non-finite Lbol"):
+        tf.predict_bol(
+            model="nickel",
+            params=PARAMS_NI,
+            t_days=np.array([1.0], float),
+            Nx=20,
+            Ny=50,
+            t_max_days=5.0,
+        )
+
+
+def test_fit_treats_nonphysical_solver_output_as_impossible(monkeypatch):
+    def fake_solve_state(engine, theta, *, Nx, Ny, t_max_days_obs, z):
+        return (
+            np.array([1.0, 2.0], float),
+            np.array([1.0e41, np.nan], float),
+            np.array([6000.0, 6000.0], float),
+            np.array([1.0e14, 1.1e14], float),
+        )
+
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        sample = np.mean(np.asarray(prior.bounds, float), axis=1)
+        return sample.reshape(1, -1), np.array([lnprob(sample)], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_solve_state", fake_solve_state)
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    data = tf.BolometricData(
+        t_days=np.array([1.0, 2.0], float),
+        y=np.array([1.0e41, 1.1e41], float),
+        yerr=np.array([1.0e40, 1.0e40], float),
+    )
+    res = tf.fit_bol(
+        data=data,
+        model="nickel",
+        priors={"M_ej": (1.0, 5.0)},
+        fixed={
+            "v_ej": 1.0,
+            "E_Th_in": 1.0,
+            "M_Ni": 0.1,
+            "R_0": 100.0,
+            "x_Ni": 0.2,
+            "kappa": 0.12,
+            "kappa_gamma": 0.03,
+            "t_shift": 0.0,
+        },
+        sampler_kwargs={"progress": False},
+    )
+
+    assert res.log_prob[0] == -np.inf
 
 
 def test_public_fit_rejects_fixed_ni_mass_larger_than_ejecta():
@@ -199,7 +318,7 @@ def test_multiband_forward_tmax_is_public_observer_frame():
         model="nickel",
         params=PARAMS_NI,
         z=1.0,
-        distance_modulus=MU_7P5_MPC,
+        distance_modulus=MU_Z1_PLANCK15,
         filters={"B": "johnson_cousins.B"},
         bands=["B"],
         y_kind="flux",
@@ -211,7 +330,7 @@ def test_multiband_forward_tmax_is_public_observer_frame():
         model="nickel",
         params=PARAMS_NI,
         z=1.0,
-        distance_modulus=MU_7P5_MPC,
+        distance_modulus=MU_Z1_PLANCK15,
         filters={"B": "johnson_cousins.B"},
         t_days=np.array([9.0, 11.0], float),
         band=np.array(["B", "B"], dtype=object),
@@ -453,28 +572,35 @@ def test_explicit_distance_and_extinction_roundtrip(tmp_path):
         yerr=np.full(10, 0.1),
     )
 
-    res = tf.fit_multiband(
-        data=data,
-        model="nickel",
-        z=0.001728,
-        distance_modulus=MU_7P5_MPC,
-        filters={"B": "johnson_cousins.B", "V": "johnson_cousins.V"},
-        y_kind="mag",
-        mag_system="vega",
-        extinction={"B": 0.1, "V": 0.05},
-        priors={
-            "M_ej": (1.0, 5.0),
-            "v_ej": (0.5, 2.0),
-            "E_Th_in": (0.05, 8.0),
-            "M_Ni": (0.01, 0.2),
-            "R_0": (10.0, 400.0),
-            "T_floor": (2000.0, 6000.0),
-        },
-        fixed={"x_Ni": 0.2, "kappa": 0.12, "kappa_gamma": 0.03, "t_shift": 0.0},
-        sampler="emcee",
-        sampler_kwargs={"nwalkers": 16, "nsteps": 10, "burnin": 2, "thin": 1, "seed": 1, "progress": False},
-        model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 8.0},
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="invalid value encountered in divide",
+            category=RuntimeWarning,
+            module=r"emcee\.autocorr",
+        )
+        res = tf.fit_multiband(
+            data=data,
+            model="nickel",
+            z=0.001728,
+            distance_modulus=MU_7P5_MPC,
+            filters={"B": "johnson_cousins.B", "V": "johnson_cousins.V"},
+            y_kind="mag",
+            mag_system="vega",
+            extinction={"B": 0.1, "V": 0.05},
+            priors={
+                "M_ej": (1.0, 5.0),
+                "v_ej": (0.5, 2.0),
+                "E_Th_in": (0.05, 8.0),
+                "M_Ni": (0.01, 0.2),
+                "R_0": (10.0, 400.0),
+                "T_floor": (2000.0, 6000.0),
+            },
+            fixed={"x_Ni": 0.2, "kappa": 0.12, "kappa_gamma": 0.03, "t_shift": 0.0},
+            sampler="emcee",
+            sampler_kwargs={"nwalkers": 16, "nsteps": 10, "burnin": 2, "thin": 1, "seed": 1, "progress": False},
+            model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 8.0},
+        )
 
     path = tmp_path / "fit_multiband_redesign.npz"
     saved = tf.save(res, path=path)
