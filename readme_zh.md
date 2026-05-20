@@ -55,6 +55,12 @@ cd TransFit
 python -m pip install -e .
 ```
 
+如果你想运行 notebook 或绘图示例，安装示例依赖：
+
+```bash
+python -m pip install -e .[examples]
+```
+
 如果你还想安装拟合后端和角图依赖，可以直接安装完整可选依赖：
 
 ```bash

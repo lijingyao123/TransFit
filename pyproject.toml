@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "A light-curve fitting framework for astronomical transients"
 readme = "readme.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 authors = [
   { name = "Liangduan Liu", email = "liuld@ccnu.edu.cn" },
   { name = "Yuhao Zhang", email = "zhangyh2001@foxmail.com" },
@@ -24,34 +25,36 @@ keywords = [
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
   "numpy",
-  "matplotlib",
-  "pandas",
   "numba",
   "astropy",
-  "scipy",
 ]
 
 [project.optional-dependencies]
-plot = ["corner"]
+plot = ["matplotlib", "corner"]
+examples = ["matplotlib", "pandas"]
 emcee = ["emcee"]
 zeus = ["zeus-mcmc"]
 dynesty = ["dynesty"]
+dev = ["build", "pytest"]
 fit = [
   "emcee",
   "zeus-mcmc",
   "dynesty",
 ]
 all = [
+  "matplotlib",
+  "pandas",
   "corner",
   "emcee",
   "zeus-mcmc",

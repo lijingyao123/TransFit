@@ -80,6 +80,8 @@ def _distance_from_public_inputs(
     z_norm = None if z is None else float(z)
     if z_norm is not None and not np.isfinite(z_norm):
         raise ValueError("z must be finite when provided.")
+    if z_norm is not None and z_norm < 0.0:
+        raise ValueError("z must be non-negative when provided.")
 
     dl_norm = None
     source = None
@@ -751,6 +753,11 @@ def _physical_constraints_lnprior(vals: Dict[str, float]) -> float:
     return 0.0
 
 
+def _validate_fixed_physical_constraints(fixed: Dict[str, float]) -> None:
+    if not np.isfinite(_physical_constraints_lnprior(fixed)):
+        raise ValueError("Fixed physical constraints are invalid: M_Ni must be <= M_ej.")
+
+
 def _assemble_theta_from_values(
     vals: Dict[str, float],
     names_all: List[str],
@@ -1071,6 +1078,7 @@ def fit_multiband(
     names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=True)
     bounds_all, log_set_all = _apply_log10_priors(names_all, bounds_all, priors_log10)
     names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
+    _validate_fixed_physical_constraints(fixed)
     log_flags_samp = [n in log_set_all for n in names_samp]
     prior = MixedBoundsPrior(bounds=bounds_samp, param_names=names_samp, log_flags=log_flags_samp)
 
@@ -1229,6 +1237,7 @@ def fit_bol(
     fixed = dict(fixed or {})
 
     names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
+    _validate_fixed_physical_constraints(fixed)
     log_flags_samp = [n in log_set_all for n in names_samp]
     prior = MixedBoundsPrior(bounds=bounds_samp, param_names=names_samp, log_flags=log_flags_samp)
 

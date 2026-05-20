@@ -4,21 +4,30 @@
 # python
 __pycache__/
 *.pyc
+*.nbc
+*.nbi
 .ipynb_checkpoints/
 .venv/
 venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.jupyter_runtime/
 .coverage
 htmlcov/
 build/
 dist/
 *.egg-info/
 
+# editor/local
+.vscode/
+
 # outputs
+Log/
 MCMC_out/
 mcmc_out/
 *.npz
 *.h5
 *.log
+*.zip
+Transfit_v*/

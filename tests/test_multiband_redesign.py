@@ -70,10 +70,52 @@ def test_removed_sc_alias_is_rejected():
         tf.model_param_names("sc_magnetar")
 
 
+def test_negative_redshift_is_rejected_by_public_forward_apis():
+    with pytest.raises(ValueError, match="z must be non-negative"):
+        tf.lightcurve_bol(
+            model="nickel",
+            params=LEGACY_PARAMS_NI,
+            z=-0.1,
+            Nx=20,
+            Ny=50,
+            t_max_days=5.0,
+        )
+
+    with pytest.raises(ValueError, match="z must be non-negative"):
+        tf.predict_multiband(
+            model="nickel",
+            params=PARAMS_NI,
+            z=-0.1,
+            distance_modulus=MU_7P5_MPC,
+            filters={"B": "johnson_cousins.B"},
+            t_days=np.array([1.0], float),
+            band=np.array(["B"], dtype=object),
+            y_kind="flux",
+            Nx=20,
+            Ny=50,
+            t_max_days=5.0,
+        )
+
+
 def test_physical_constraints_reject_ni_mass_larger_than_ejecta():
     assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 1.1}) == -np.inf
     assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 1.0}) == pytest.approx(0.0)
     assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 0.1}) == pytest.approx(0.0)
+
+
+def test_public_fit_rejects_fixed_ni_mass_larger_than_ejecta():
+    data = tf.BolometricData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        y=np.array([1.0e41, 1.1e41, 1.0e41], float),
+        yerr=np.array([1.0e40, 1.0e40, 1.0e40], float),
+    )
+
+    with pytest.raises(ValueError, match="M_Ni must be <= M_ej"):
+        tf.fit_bol(
+            data=data,
+            model="nickel",
+            fixed={"M_ej": 0.5, "M_Ni": 0.6},
+        )
 
 
 def test_mcmc_backends_treat_nsteps_as_production_length():

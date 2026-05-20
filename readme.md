@@ -56,7 +56,13 @@ cd TransFit
 python -m pip install -e .
 ```
 
-If you also want fitting backends and corner plots, install the optional extras:
+If you want to run the notebooks or plotting examples, install the example extras:
+
+```bash
+python -m pip install -e .[examples]
+```
+
+If you also want fitting backends and corner plots, install the full optional extras:
 
 ```bash
 python -m pip install -e .[all]

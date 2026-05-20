@@ -133,7 +133,6 @@ fit_multiband(
     data,
     model,
     z=None,
-    DL_Mpc=None,
     distance_modulus=None,
     filters,
     y_kind="mag",
@@ -154,7 +153,6 @@ lightcurve_multiband(
     params=None,
     theta=None,
     z=None,
-    DL_Mpc=None,
     distance_modulus=None,
     filters,
     bands,
@@ -175,7 +173,6 @@ predict_multiband(
     params=None,
     theta=None,
     z=None,
-    DL_Mpc=None,
     distance_modulus=None,
     filters,
     t_days,
@@ -202,9 +199,9 @@ predict_multiband(
 - `z`
   - used for time dilation and frequency redshift
   - not required to define distance if the user supplies an explicit distance
-- `DL_Mpc`, `distance_modulus`
-  - explicit distance options
-  - only one may be supplied
+- `distance_modulus`
+  - explicit distance option
+  - used for flux normalization when supplied
 - `filters`
   - user filter definitions or built-in preset references
 - `extinction`
@@ -365,9 +362,8 @@ The user may supply:
 
 ### 7.3 Validation
 
-At most one of these explicit distance inputs may be given:
+The public explicit distance input is:
 
-- `DL_Mpc`
 - `distance_modulus`
 
 Internally normalize them into:
@@ -377,7 +373,7 @@ Internally normalize them into:
 class DistanceSpec:
     z: float
     DL_cm: float
-    source: Literal["from_z", "DL_Mpc", "distance_modulus"]
+    source: Literal["from_z", "distance_modulus"]
 ```
 
 Older saved results may still contain `"DL_cm"` as a legacy source tag, but that should no longer appear in the public API.
@@ -616,7 +612,7 @@ res = tf.fit_multiband(
     data=data,
     model="nickel",
     z=0.002,
-    DL_Mpc=3.6,
+    distance_modulus=27.78,
     filters=filters,
     y_kind="mag",
     mag_system="vega",
@@ -635,7 +631,7 @@ res = tf.fit_multiband(
     data=data,
     model="nickel",
     z=0.002,
-    DL_Mpc=3.6,
+    distance_modulus=27.78,
     filters=filters,
     y_kind="mag",
     mag_system="vega",
