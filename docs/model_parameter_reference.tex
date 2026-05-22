@@ -102,4 +102,13 @@ Therefore:
   \item if you do not want to fit \texttt{t\_shift}, fix it with \texttt{fixed = \{"t\_shift": 0.0\}}.
 \end{itemize}
 
+\section*{\texttt{t\_max\_days} in Fitting}
+
+When \texttt{model\_kwargs} does not specify \texttt{t\_max\_days}, fitting APIs choose it automatically from the data and the allowed \texttt{t\_shift} range:
+\[
+\texttt{t\_max\_days} = \max(150, \max(t_{\mathrm{obs}}) + t_{\mathrm{shift,upper}} + 20).
+\]
+
+If users provide \texttt{model\_kwargs["t\_max\_days"]} explicitly, it must cover at least \(\max(t_{\mathrm{obs}}) + t_{\mathrm{shift,upper}}\); otherwise TransFit raises an error instead of silently returning \texttt{-inf} likelihood values from an undersized model grid.
+
 \end{document}

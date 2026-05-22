@@ -158,6 +158,48 @@ def test_t_shift_prior_is_non_negative():
         )
 
 
+def test_fit_auto_t_max_days_covers_t_shift_prior(monkeypatch):
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        sample = np.mean(np.asarray(prior.bounds, float), axis=1)
+        return sample.reshape(1, -1), np.array([0.0], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    data = tf.BolometricData(
+        t_days=np.array([10.0, 180.0], float),
+        y=np.array([1.0e41, 1.1e41], float),
+        yerr=np.array([1.0e40, 1.0e40], float),
+    )
+    res = tf.fit_bol(
+        data=data,
+        model="nickel",
+        priors={"t_shift": (0.0, 80.0)},
+        sampler_kwargs={"progress": False},
+        model_kwargs={"Nx": 20, "Ny": 60},
+    )
+
+    assert res.meta["model_kwargs"]["t_max_days"] == pytest.approx(280.0)
+    assert res.meta["t_max_days_policy"]["t_max_days_required"] == pytest.approx(260.0)
+    assert res.meta["t_max_days_policy"]["t_shift_upper"] == pytest.approx(80.0)
+    assert res.meta["t_max_days_policy"]["t_max_days_auto"] is True
+
+
+def test_fit_rejects_explicit_t_max_days_smaller_than_t_shift_range():
+    data = tf.BolometricData(
+        t_days=np.array([10.0, 100.0], float),
+        y=np.array([1.0e41, 1.1e41], float),
+        yerr=np.array([1.0e40, 1.0e40], float),
+    )
+
+    with pytest.raises(ValueError, match="t_max_days.*too small"):
+        tf.fit_bol(
+            data=data,
+            model="nickel",
+            priors={"t_shift": (0.0, 80.0)},
+            model_kwargs={"t_max_days": 150.0},
+        )
+
+
 def test_public_forward_rejects_nonphysical_parameters_before_solving():
     bad = dict(PARAMS_NI)
     bad["x_Ni"] = 1.1

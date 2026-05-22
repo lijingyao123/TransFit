@@ -25,6 +25,8 @@ from transfit.constants import DAY, MPC, PC
 # -------------------------
 
 _BOL_INTERNAL_T_FLOOR = 1000.0
+_FIT_T_MAX_DAYS_DEFAULT = 150.0
+_FIT_T_MAX_DAYS_PADDING = 20.0
 
 
 class _NonPhysicalModelOutput(ValueError):
@@ -1046,6 +1048,66 @@ def _split_fit_model_kwargs(model_kwargs: Optional[Dict[str, Any]]):
     return mk, fill
 
 
+def _t_shift_upper_for_fit(names_all: Sequence[str], bounds_all: np.ndarray, fixed: Dict[str, float]) -> float:
+    if "t_shift" in fixed:
+        return float(fixed["t_shift"])
+    names = [str(n) for n in names_all]
+    if "t_shift" not in names:
+        return 0.0
+    idx = names.index("t_shift")
+    return float(np.asarray(bounds_all, float)[idx, 1])
+
+
+def _resolve_fit_t_max_days(
+    model_kwargs: Dict[str, Any],
+    *,
+    t_obs: np.ndarray,
+    names_all: Sequence[str],
+    bounds_all: np.ndarray,
+    fixed: Dict[str, float],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    Ensure fit-time model grids cover all possible t_obs + t_shift values.
+
+    Explicit user values are accepted when they cover the allowed time range.
+    Automatic values add a small padding for interpolation/plot reuse.
+    """
+    mk = dict(model_kwargs or {})
+    t_max_obs = float(np.nanmax(np.asarray(t_obs, float)))
+    t_shift_upper = max(0.0, _t_shift_upper_for_fit(names_all, bounds_all, fixed))
+    required = max(0.0, t_max_obs + t_shift_upper)
+
+    if "t_max_days" in mk:
+        try:
+            user_t_max = float(mk["t_max_days"])
+        except Exception as exc:
+            raise ValueError("model_kwargs['t_max_days'] must be a positive finite number.") from exc
+        if not np.isfinite(user_t_max) or user_t_max <= 0.0:
+            raise ValueError("model_kwargs['t_max_days'] must be a positive finite number.")
+        if user_t_max + 1e-12 < required:
+            raise ValueError(
+                "model_kwargs['t_max_days'] is too small for data.t_days and the allowed t_shift range. "
+                f"Need at least {required:.6g} observer-frame days, got {user_t_max:.6g}."
+            )
+        mk["t_max_days"] = user_t_max
+        return mk, dict(
+            t_max_days=user_t_max,
+            t_max_days_auto=False,
+            t_max_days_required=required,
+            t_shift_upper=t_shift_upper,
+        )
+
+    auto_t_max = max(_FIT_T_MAX_DAYS_DEFAULT, required + _FIT_T_MAX_DAYS_PADDING)
+    mk["t_max_days"] = float(auto_t_max)
+    return mk, dict(
+        t_max_days=float(auto_t_max),
+        t_max_days_auto=True,
+        t_max_days_required=required,
+        t_shift_upper=t_shift_upper,
+        t_max_days_padding=_FIT_T_MAX_DAYS_PADDING,
+    )
+
+
 def fit_multiband(
     *,
     data: MultiBandData,
@@ -1097,6 +1159,13 @@ def fit_multiband(
     _validate_sampling_bounds_physical_constraints(names_all, bounds_all)
     names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
     _validate_fixed_physical_constraints(fixed)
+    model_kwargs_pred, tmax_meta = _resolve_fit_t_max_days(
+        model_kwargs_pred,
+        t_obs=t_obs,
+        names_all=names_all,
+        bounds_all=bounds_all,
+        fixed=fixed,
+    )
     log_flags_samp = [n in log_set_all for n in names_samp]
     prior = MixedBoundsPrior(bounds=bounds_samp, param_names=names_samp, log_flags=log_flags_samp)
 
@@ -1182,6 +1251,7 @@ def fit_multiband(
             log_prior_names=sorted([n for n in names_samp if n in log_set_all]),
             interp_fill_fit=interp_fill_fit,
             model_kwargs=model_kwargs_pred,
+            t_max_days_policy=tmax_meta,
         )
     )
 
@@ -1260,6 +1330,13 @@ def fit_bol(
 
     names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
     _validate_fixed_physical_constraints(fixed)
+    model_kwargs_pred, tmax_meta = _resolve_fit_t_max_days(
+        model_kwargs_pred,
+        t_obs=t_obs,
+        names_all=names_all,
+        bounds_all=bounds_all,
+        fixed=fixed,
+    )
     log_flags_samp = [n in log_set_all for n in names_samp]
     prior = MixedBoundsPrior(bounds=bounds_samp, param_names=names_samp, log_flags=log_flags_samp)
 
@@ -1316,6 +1393,7 @@ def fit_bol(
             log_prior_names=sorted([n for n in names_samp if n in log_set_all]),
             interp_fill_fit=interp_fill_fit,
             model_kwargs=model_kwargs_pred,
+            t_max_days_policy=tmax_meta,
             internal_t_floor=_BOL_INTERNAL_T_FLOOR,
         )
     )
