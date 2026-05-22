@@ -131,11 +131,6 @@ class FitResult:
         return self.median()
 
     @property
-    def best_t_shift(self) -> float:
-        """Best-fit time shift."""
-        return float(self.best_params_raw.get("t_shift", 0.0))
-
-    @property
     def best_fit(self) -> Dict[str, Any]:
         """
         Compact best-fit record:

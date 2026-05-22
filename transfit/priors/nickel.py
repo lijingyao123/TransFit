@@ -34,7 +34,7 @@ NICKEL_DEFAULT_BOUNDS = np.array([
 ], dtype=float)
 
 T_SHIFT_NAME = "t_shift"
-T_SHIFT_BOUNDS = (-10.0, 20.0)
+T_SHIFT_BOUNDS = (0.0, 20.0)
 
 
 def default_names_and_bounds(include_t_shift: bool = True):

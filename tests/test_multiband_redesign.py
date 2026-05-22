@@ -63,6 +63,7 @@ def test_public_nickel_and_magnetar_use_canonical_full_parameter_sets():
 
     assert nickel_names == ["M_ej", "v_ej", "E_Th_in", "M_Ni", "R_0", "x_Ni", "kappa", "kappa_gamma", "T_floor"]
     assert magnetar_names == ["M_ej", "v_ej", "E_Th_in", "P_ms", "B14", "R_0", "kappa", "kappa_gamma", "T_floor"]
+    assert tf.model_param_names("nickel", include_t_shift=True)[-1] == "t_shift"
 
 
 def test_public_forward_signatures_use_params_not_theta():
@@ -72,7 +73,7 @@ def test_public_forward_signatures_use_params_not_theta():
         assert "theta" not in params
 
 
-def test_fit_result_no_longer_exposes_theta_properties():
+def test_fit_result_uses_params_for_public_best_fit_values():
     res = api.FitResult(
         model="nickel",
         ctx=None,
@@ -87,7 +88,9 @@ def test_fit_result_no_longer_exposes_theta_properties():
 
     assert not hasattr(res, "best_theta")
     assert not hasattr(res, "best_theta_and_shift")
-    assert res.best_t_shift == pytest.approx(1.25)
+    assert not hasattr(res, "best_t_shift")
+    assert res.best_params["t_shift"] == pytest.approx(1.25)
+    assert res.best_params_raw["t_shift"] == pytest.approx(1.25)
 
 
 def test_removed_sc_alias_is_rejected():
@@ -133,6 +136,26 @@ def test_physical_constraints_reject_ni_mass_larger_than_ejecta():
     assert _physical_constraints_lnprior({"kappa_gamma": 0.0}) == -np.inf
     assert _physical_constraints_lnprior({"x_Ni": 1.1}) == -np.inf
     assert _physical_constraints_lnprior({"T_floor": np.nan}) == -np.inf
+    assert _physical_constraints_lnprior({"t_shift": -0.1}) == -np.inf
+    assert _physical_constraints_lnprior({"t_shift": 0.0}) == pytest.approx(0.0)
+
+
+def test_t_shift_prior_is_non_negative():
+    names, bounds = api.build_bounds("nickel", include_t_shift=True)
+    i = names.index("t_shift")
+    assert bounds[i, 0] == pytest.approx(0.0)
+
+    data = tf.BolometricData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        y=np.array([1.0e41, 1.1e41, 1.0e41], float),
+        yerr=np.array([1.0e40, 1.0e40, 1.0e40], float),
+    )
+    with pytest.raises(ValueError, match="t_shift.*>= 0"):
+        tf.fit_bol(
+            data=data,
+            model="nickel",
+            priors={"t_shift": (-1.0, 5.0)},
+        )
 
 
 def test_public_forward_rejects_nonphysical_parameters_before_solving():

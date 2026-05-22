@@ -83,7 +83,7 @@ TransFit validates public forward calls and fit-time fixed/sampled values agains
   \item \texttt{E\_Th\_in} and \texttt{M\_Ni} must be finite and non-negative;
   \item \texttt{x\_Ni} must be finite and in \texttt{[0, 1]};
   \item if both are present, \texttt{M\_Ni <= M\_ej};
-  \item \texttt{t\_shift} must be finite.
+  \item \texttt{t\_shift} must be finite and non-negative.
 \end{itemize}
 
 The solver output is also checked before interpolation or photometry. Non-positive or non-finite \texttt{Lbol}, \texttt{Teff}, or \texttt{Rph} values are rejected instead of being silently clipped into log-space interpolation.
@@ -98,6 +98,7 @@ In fitting mode, the likelihood is evaluated as
 Therefore:
 \begin{itemize}
   \item positive \texttt{t\_shift} shifts the model curve to earlier observed times;
+  \item \texttt{t\_shift = 0} means the model start and the data time zero are the same;
   \item if you do not want to fit \texttt{t\_shift}, fix it with \texttt{fixed = \{"t\_shift": 0.0\}}.
 \end{itemize}
 

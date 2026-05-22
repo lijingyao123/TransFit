@@ -340,7 +340,7 @@ def _model_vector_from_params(
     return tuple(model_vector)
 
 
-_NONNEGATIVE_PARAMS = {"E_Th_in", "M_Ni"}
+_NONNEGATIVE_PARAMS = {"E_Th_in", "M_Ni", "t_shift"}
 _POSITIVE_PARAMS = {"M_ej", "v_ej", "R_0", "kappa", "kappa_gamma", "T_floor", "P_ms", "B14"}
 _UNIT_INTERVAL_PARAMS = {"x_Ni"}
 
@@ -764,6 +764,17 @@ def _validate_fixed_physical_constraints(fixed: Dict[str, float]) -> None:
         raise ValueError(f"Fixed physical constraints are invalid: {reason}")
 
 
+def _validate_sampling_bounds_physical_constraints(names: Sequence[str], bounds: np.ndarray) -> None:
+    b = np.asarray(bounds, float)
+    for name, (lo, hi) in zip([str(n) for n in names], b):
+        if name in _POSITIVE_PARAMS and lo <= 0.0:
+            raise ValueError(f"Prior bounds for '{name}' must be > 0.")
+        if name in _NONNEGATIVE_PARAMS and lo < 0.0:
+            raise ValueError(f"Prior bounds for '{name}' must be >= 0.")
+        if name in _UNIT_INTERVAL_PARAMS and (lo < 0.0 or hi > 1.0):
+            raise ValueError(f"Prior bounds for '{name}' must stay within [0, 1].")
+
+
 def _assemble_model_params_from_values(
     vals: Dict[str, float],
     names_all: List[str],
@@ -1083,6 +1094,7 @@ def fit_multiband(
     priors_lin, priors_log10 = _split_prior_specs(priors)
     names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=True)
     bounds_all, log_set_all = _apply_log10_priors(names_all, bounds_all, priors_log10)
+    _validate_sampling_bounds_physical_constraints(names_all, bounds_all)
     names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
     _validate_fixed_physical_constraints(fixed)
     log_flags_samp = [n in log_set_all for n in names_samp]
@@ -1242,6 +1254,7 @@ def fit_bol(
         bounds_all = np.delete(bounds_all, i_tf, axis=0)
         if "T_floor" in log_set_all:
             log_set_all.remove("T_floor")
+    _validate_sampling_bounds_physical_constraints(names_all, bounds_all)
 
     fixed = dict(fixed or {})
 
