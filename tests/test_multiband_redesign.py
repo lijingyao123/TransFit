@@ -71,6 +71,9 @@ def test_public_forward_signatures_use_params_not_theta():
         params = inspect.signature(func).parameters
         assert "params" in params
         assert "theta" not in params
+        assert "Nx" not in params
+        assert "Ny" not in params
+        assert "solver_kwargs" in params
 
 
 def test_fit_result_uses_params_for_public_best_fit_values():
@@ -89,8 +92,12 @@ def test_fit_result_uses_params_for_public_best_fit_values():
     assert not hasattr(res, "best_theta")
     assert not hasattr(res, "best_theta_and_shift")
     assert not hasattr(res, "best_t_shift")
+    assert not hasattr(res, "best_fit_params")
+    assert not hasattr(res, "best")
+    assert not hasattr(res, "median")
     assert res.best_params["t_shift"] == pytest.approx(1.25)
     assert res.best_params_raw["t_shift"] == pytest.approx(1.25)
+    assert res.median_params["t_shift"] == pytest.approx(1.25)
 
 
 def test_removed_sc_alias_is_rejected():
@@ -107,8 +114,7 @@ def test_negative_redshift_is_rejected_by_public_forward_apis():
             model="nickel",
             params=LEGACY_PARAMS_NI,
             z=-0.1,
-            Nx=20,
-            Ny=50,
+            solver_kwargs={"Nx": 20, "Ny": 50},
             t_max_days=5.0,
         )
 
@@ -122,8 +128,7 @@ def test_negative_redshift_is_rejected_by_public_forward_apis():
             t_days=np.array([1.0], float),
             band=np.array(["B"], dtype=object),
             y_kind="flux",
-            Nx=20,
-            Ny=50,
+            solver_kwargs={"Nx": 20, "Ny": 50},
             t_max_days=5.0,
         )
 
@@ -207,8 +212,7 @@ def test_public_forward_rejects_nonphysical_parameters_before_solving():
         tf.lightcurve_bol(
             model="nickel",
             params=bad,
-            Nx=20,
-            Ny=50,
+            solver_kwargs={"Nx": 20, "Ny": 50},
             t_max_days=5.0,
         )
 
@@ -219,8 +223,7 @@ def test_public_forward_rejects_nonphysical_parameters_before_solving():
             model="nickel",
             params=bad,
             t_days=np.array([1.0], float),
-            Nx=20,
-            Ny=50,
+            solver_kwargs={"Nx": 20, "Ny": 50},
             t_max_days=5.0,
         )
 
@@ -240,8 +243,7 @@ def test_public_forward_rejects_nonphysical_solver_output(monkeypatch):
             model="nickel",
             params=PARAMS_NI,
             t_days=np.array([1.0], float),
-            Nx=20,
-            Ny=50,
+            solver_kwargs={"Nx": 20, "Ny": 50},
             t_max_days=5.0,
         )
 
@@ -344,8 +346,7 @@ def test_legacy_short_nickel_param_dict_is_still_accepted_for_forward_calls():
         band=np.array(["B", "B"], dtype=object),
         y_kind="flux",
         mag_system="ab",
-        Nx=20,
-        Ny=50,
+        solver_kwargs={"Nx": 20, "Ny": 50},
         t_max_days=5.0,
     )
 
@@ -358,8 +359,7 @@ def test_bolometric_forward_tmax_is_public_observer_frame():
         model="nickel",
         params=LEGACY_PARAMS_NI,
         z=1.0,
-        Nx=20,
-        Ny=50,
+        solver_kwargs={"Nx": 20, "Ny": 50},
         t_max_days=10.0,
     )
     pred = tf.predict_bol(
@@ -367,8 +367,7 @@ def test_bolometric_forward_tmax_is_public_observer_frame():
         params=LEGACY_PARAMS_NI,
         z=1.0,
         t_days=np.array([9.0, 11.0], float),
-        Nx=20,
-        Ny=50,
+        solver_kwargs={"Nx": 20, "Ny": 50},
         t_max_days=10.0,
         interp_fill="nan",
     )
@@ -387,8 +386,7 @@ def test_multiband_forward_tmax_is_public_observer_frame():
         filters={"B": "johnson_cousins.B"},
         bands=["B"],
         y_kind="flux",
-        Nx=20,
-        Ny=50,
+        solver_kwargs={"Nx": 20, "Ny": 50},
         t_max_days=10.0,
     )
     pred = tf.predict_multiband(
@@ -400,8 +398,7 @@ def test_multiband_forward_tmax_is_public_observer_frame():
         t_days=np.array([9.0, 11.0], float),
         band=np.array(["B", "B"], dtype=object),
         y_kind="flux",
-        Nx=20,
-        Ny=50,
+        solver_kwargs={"Nx": 20, "Ny": 50},
         t_max_days=10.0,
         interp_fill="nan",
     )
@@ -424,8 +421,7 @@ def test_flux_output_is_independent_of_mag_system():
         band=band,
         y_kind="flux",
         mag_system="ab",
-        Nx=20,
-        Ny=50,
+        solver_kwargs={"Nx": 20, "Ny": 50},
         t_max_days=5.0,
     )
     flux_vega = tf.predict_multiband(
@@ -437,8 +433,7 @@ def test_flux_output_is_independent_of_mag_system():
         band=band,
         y_kind="flux",
         mag_system="vega",
-        Nx=20,
-        Ny=50,
+        solver_kwargs={"Nx": 20, "Ny": 50},
         t_max_days=5.0,
     )
 
@@ -576,8 +571,7 @@ def test_predict_multiband_accepts_structured_extinction():
         band=band,
         y_kind="mag",
         mag_system="vega",
-        Nx=20,
-        Ny=50,
+        solver_kwargs={"Nx": 20, "Ny": 50},
         t_max_days=8.0,
     )
     reddened = tf.predict_multiband(
@@ -590,8 +584,7 @@ def test_predict_multiband_accepts_structured_extinction():
         y_kind="mag",
         mag_system="vega",
         extinction={"mw": {"ebv": 0.04, "rv": 3.1, "law": "ccm89"}},
-        Nx=20,
-        Ny=50,
+        solver_kwargs={"Nx": 20, "Ny": 50},
         t_max_days=8.0,
     )
 
@@ -608,8 +601,7 @@ def test_vega_requires_zero_points_for_all_used_bands():
             bands=["B"],
             y_kind="mag",
             mag_system="vega",
-            Nx=20,
-            Ny=50,
+            solver_kwargs={"Nx": 20, "Ny": 50},
             t_max_days=5.0,
         )
 
@@ -625,8 +617,7 @@ def test_explicit_distance_and_extinction_roundtrip(tmp_path):
         y_kind="mag",
         mag_system="vega",
         extinction={"B": 0.1, "V": 0.05},
-        Nx=20,
-        Ny=60,
+        solver_kwargs={"Nx": 20, "Ny": 60},
         t_max_days=8.0,
     )
     idx = np.linspace(0, len(mb.t_days) - 1, 5, dtype=int)

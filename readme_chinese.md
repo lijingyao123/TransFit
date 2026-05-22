@@ -1,5 +1,9 @@
 # TransFit
 
+<p align="right">
+  <strong>语言：</strong><a href="readme.md">English</a> | 中文
+</p>
+
 ---
 
 <table>
@@ -44,6 +48,11 @@ TransFit 主要面向两类任务：
 - `tf.fit_multiband(...)`
 - `tf.save(...)`
 - `tf.load(...)`
+
+标准工作流保持精简：先构造数据容器，再拟合，然后从
+`res.best_params` / `res.best_params_raw` 读取参数，并用
+`tf.plot.fit(...)` 画图。`Nx`、`Ny` 这类数值网格设置属于高级选项，
+放在 `solver_kwargs` 里，不作为初级入口参数。
 
 ## 安装方式
 
@@ -191,6 +200,7 @@ res_bol = tf.fit_bol(
         "E_Th_in": (0.05, 8.0),
         "M_Ni": ("log10", -3.0, -0.2),
         "R_0": (10.0, 400.0),
+        "t_shift": (0.0, 30.0),
     },
     fixed={
         "x_Ni": 0.2,
@@ -207,6 +217,9 @@ res_bol = tf.fit_bol(
         "progress": True,
     },
 )
+
+params_best = res_bol.best_params_raw
+print(res_bol.best_fit)
 ```
 
 多波段拟合示例：
@@ -271,6 +284,7 @@ res_mb = tf.fit_multiband(
         "M_Ni": (0.01, 0.5),
         "R_0": (10.0, 400.0),
         "T_floor": (3000.0, 8000.0),
+        "t_shift": (0.0, 30.0),
     },
     fixed={"kappa": 0.06},
     sampler="emcee",
@@ -283,6 +297,9 @@ res_mb = tf.fit_multiband(
         "progress": True,
     },
 )
+
+params_best = res_mb.best_params_raw
+print(res_mb.best_fit)
 ```
 
 拟合完成后，可以直接画图并保存链：
@@ -296,6 +313,47 @@ path = tf.save(res_mb, path="mcmc_out/fit_nickel_multiband_demo.npz")
 loaded = tf.load(path)
 print(path)
 print(loaded["samples"].shape)
+```
+
+### 结果 API
+
+`fit_bol()` 和 `fit_multiband()` 返回 `FitResult`。主要结果入口是：
+
+```python
+res.best_params       # 四舍五入后的最佳参数 dict，包含 t_shift
+res.best_params_raw   # 全精度最佳参数 dict
+res.median_params     # 后验中位数参数 dict
+res.best_fit          # 包含 params、errors、log_prob、sample 的摘要
+res.samples           # 展平后的后验样本
+res.log_prob          # 每个样本的 log posterior
+res.meta              # priors、bounds、sampler 和模型设置元数据
+```
+
+`t_shift` 是非负量，约定为：
+
+```python
+t_model = t_obs + t_shift
+```
+
+拟合时 `t_max_days` 会根据数据和允许的 `t_shift` 上界自动选择。如果用户通过
+`model_kwargs` 显式指定它，必须至少覆盖 `max(data.t_days) + t_shift_upper`。
+
+高级数值网格设置写作：
+
+```python
+model_kwargs={
+    "solver_kwargs": {"Nx": 100, "Ny": 1000},
+}
+```
+
+正向计算时也可以这样写：
+
+```python
+bol = tf.lightcurve_bol(
+    model="nickel",
+    params=params_best,
+    solver_kwargs={"Nx": 100, "Ny": 1000},
+)
 ```
 
 ## 联系方式

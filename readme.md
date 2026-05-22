@@ -1,5 +1,9 @@
 # TransFit
 
+<p align="right">
+  <strong>Language:</strong> English | <a href="readme_chinese.md">中文</a>
+</p>
+
 ---
 
 <table>
@@ -45,6 +49,11 @@ Main public interfaces:
 - `tf.fit_multiband(...)`
 - `tf.save(...)`
 - `tf.load(...)`
+
+The standard workflow is intentionally small: build a data container, fit it,
+read parameters from `res.best_params` / `res.best_params_raw`, and plot with
+`tf.plot.fit(...)`. Numerical grid controls such as `Nx` and `Ny` are advanced
+settings under `solver_kwargs`, not top-level beginner arguments.
 
 ## Installation
 
@@ -192,6 +201,7 @@ res_bol = tf.fit_bol(
         "E_Th_in": (0.05, 8.0),
         "M_Ni": ("log10", -3.0, -0.2),
         "R_0": (10.0, 400.0),
+        "t_shift": (0.0, 30.0),
     },
     fixed={
         "x_Ni": 0.2,
@@ -208,6 +218,9 @@ res_bol = tf.fit_bol(
         "progress": True,
     },
 )
+
+params_best = res_bol.best_params_raw
+print(res_bol.best_fit)
 ```
 
 Multi-band fit example:
@@ -272,6 +285,7 @@ res_mb = tf.fit_multiband(
         "M_Ni": (0.01, 0.5),
         "R_0": (10.0, 400.0),
         "T_floor": (3000.0, 8000.0),
+        "t_shift": (0.0, 30.0),
     },
     fixed={"kappa": 0.06},
     sampler="emcee",
@@ -284,6 +298,9 @@ res_mb = tf.fit_multiband(
         "progress": True,
     },
 )
+
+params_best = res_mb.best_params_raw
+print(res_mb.best_fit)
 ```
 
 Plot fitted results and save the chain:
@@ -297,6 +314,49 @@ path = tf.save(res_mb, path="mcmc_out/fit_nickel_multiband_demo.npz")
 loaded = tf.load(path)
 print(path)
 print(loaded["samples"].shape)
+```
+
+### Result API
+
+`fit_bol()` and `fit_multiband()` return a `FitResult`. The main result
+properties are:
+
+```python
+res.best_params       # rounded best-fit parameter dict, includes t_shift
+res.best_params_raw   # full-precision best-fit parameter dict
+res.median_params     # posterior median parameter dict
+res.best_fit          # compact report with params, errors, log_prob, sample
+res.samples           # flattened posterior samples
+res.log_prob          # log posterior values for samples
+res.meta              # priors, bounds, sampler metadata, model settings
+```
+
+`t_shift` is non-negative and follows:
+
+```python
+t_model = t_obs + t_shift
+```
+
+For fitting, `t_max_days` is chosen automatically from the data and the upper
+allowed `t_shift` value. If you explicitly provide it through `model_kwargs`,
+it must cover `max(data.t_days) + t_shift_upper`.
+
+Advanced numerical-grid settings are passed as:
+
+```python
+model_kwargs={
+    "solver_kwargs": {"Nx": 100, "Ny": 1000},
+}
+```
+
+For forward calculations:
+
+```python
+bol = tf.lightcurve_bol(
+    model="nickel",
+    params=params_best,
+    solver_kwargs={"Nx": 100, "Ny": 1000},
+)
 ```
 
 ## Contact

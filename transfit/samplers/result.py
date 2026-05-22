@@ -80,17 +80,12 @@ class FitResult:
             out[str(n)] = (float(q16), float(q50), float(q84))
         return out
 
-    def median(self) -> Dict[str, float]:
-        """Median of posterior, returned as a full parameter dict."""
+    def _median_params_raw(self) -> Dict[str, float]:
         samp = np.asarray(self.samples, float)
         if samp.ndim != 2 or samp.shape[0] == 0:
             raise ValueError("samples is empty; cannot compute posterior median.")
         med = np.median(samp, axis=0)
         return self._param_dict_from_vec(med)
-
-    def best(self) -> Dict[str, float]:
-        """MAP-like best-fit parameters (argmax over `log_prob`)."""
-        return self.best_params
 
     @property
     def best_index(self) -> int:
@@ -121,14 +116,9 @@ class FitResult:
         return self._param_dict_from_vec(self.best_sample)
 
     @property
-    def best_fit_params(self) -> Dict[str, float]:
-        """Alias of `best_params` for explicit readability."""
-        return self.best_params
-
-    @property
     def median_params(self) -> Dict[str, float]:
-        """Alias of `median()` for explicit readability."""
-        return self.median()
+        """Median of posterior, returned as a full parameter dict."""
+        return self._median_params_raw()
 
     @property
     def best_fit(self) -> Dict[str, Any]:

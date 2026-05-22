@@ -158,10 +158,9 @@ lightcurve_multiband(
     y_kind="mag",
     mag_system="ab",
     extinction=None,
-    Nx=100,
-    Ny=1000,
     t_max_days=150.0,
     sed=None,
+    solver_kwargs=None,
 )
 ```
 
@@ -178,11 +177,10 @@ predict_multiband(
     y_kind="mag",
     mag_system="ab",
     extinction=None,
-    Nx=100,
-    Ny=1000,
     t_max_days=150.0,
     interp_fill="nan",
     sed=None,
+    solver_kwargs=None,
 )
 ```
 

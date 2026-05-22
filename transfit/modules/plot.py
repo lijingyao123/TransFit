@@ -185,6 +185,13 @@ def _prepare_plot_model_kwargs(model_kwargs: Dict[str, Any], required_t_max_days
     If needed, enlarge t_max_days for forward-model generation.
     """
     mk = dict(model_kwargs or {})
+    solver_kwargs = dict(mk.pop("solver_kwargs", {}) or {})
+    for key in ("Nx", "Ny"):
+        if key in mk:
+            solver_kwargs[key] = mk.pop(key)
+    if solver_kwargs:
+        mk["solver_kwargs"] = solver_kwargs
+
     req = float(required_t_max_days)
     if not np.isfinite(req) or req <= 0.0:
         return mk

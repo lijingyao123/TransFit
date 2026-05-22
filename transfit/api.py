@@ -423,6 +423,22 @@ def _solve_state(engine, model_vector, *, Nx: int, Ny: int, t_max_days_obs: floa
     return engine.calculate_light_curve(model_vector, Nx=Nx, Ny=Ny, t_max_days=t_max_days_rest)
 
 
+def _resolve_solver_kwargs(solver_kwargs: Optional[Dict[str, Any]]) -> Dict[str, int]:
+    opts = dict(solver_kwargs or {})
+    unknown = sorted(set(opts) - {"Nx", "Ny"})
+    if unknown:
+        raise KeyError(f"Unknown solver_kwargs key(s): {unknown}. Allowed: ['Nx', 'Ny']")
+
+    out = {
+        "Nx": int(opts.get("Nx", 100)),
+        "Ny": int(opts.get("Ny", 1000)),
+    }
+    for name, value in out.items():
+        if value <= 0:
+            raise ValueError(f"solver_kwargs['{name}'] must be a positive integer.")
+    return out
+
+
 def _require_positive_finite(name: str, arr: np.ndarray) -> None:
     values = np.asarray(arr, float)
     if values.size == 0:
@@ -455,9 +471,8 @@ def lightcurve_bol(
     model: str,
     params: Optional[Dict[str, Any]] = None,
     z: Optional[float] = None,
-    Nx: int = 100,
-    Ny: int = 1000,
     t_max_days: float = 150.0,
+    solver_kwargs: Optional[Dict[str, Any]] = None,
 ) -> BolometricLC:
     """
     Return a bolometric light curve on an observer-frame time grid.
@@ -478,8 +493,11 @@ def lightcurve_bol(
     )
     engine = _get_engine(model)
     model_vector = _resolve_forward_params(model, params=params, allow_missing_tfloor=True)
+    solver = _resolve_solver_kwargs(solver_kwargs)
     z = ctx.distance.get_z()
-    t_s, Lbol, Teff, Rph = _solve_state(engine, model_vector, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    t_s, Lbol, Teff, Rph = _solve_state(
+        engine, model_vector, **solver, t_max_days_obs=t_max_days, z=z
+    )
     _validate_solved_state(Lbol, Teff, Rph)
     t_days = _t_grid_days_from_ts(t_s, z=z)
     return BolometricLC(
@@ -496,10 +514,9 @@ def predict_bol(
     params: Optional[Dict[str, Any]] = None,
     z: Optional[float] = None,
     t_days: np.ndarray,
-    Nx: int = 100,
-    Ny: int = 1000,
     t_max_days: float = 150.0,
     interp_fill: Literal["edge", "nan", "raise"] = "nan",
+    solver_kwargs: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
     """
     Predict a bolometric observable at observer-frame times `t_days`.
@@ -520,8 +537,11 @@ def predict_bol(
     )
     engine = _get_engine(model)
     model_vector = _resolve_forward_params(model, params=params, allow_missing_tfloor=True)
+    solver = _resolve_solver_kwargs(solver_kwargs)
     z = ctx.distance.get_z()
-    t_s, Lbol, Teff, Rph = _solve_state(engine, model_vector, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    t_s, Lbol, Teff, Rph = _solve_state(
+        engine, model_vector, **solver, t_max_days_obs=t_max_days, z=z
+    )
     _validate_solved_state(Lbol, Teff, Rph)
     t_grid_days = _t_grid_days_from_ts(t_s, z=z)
 
@@ -546,10 +566,9 @@ def lightcurve_multiband(
     y_kind: Literal["mag", "flux"] = "mag",
     mag_system: Literal["ab", "vega"] = "ab",
     extinction: Optional[Dict[str, Any] | ExtinctionSpec] = None,
-    Nx: int = 100,
-    Ny: int = 1000,
     t_max_days: float = 150.0,
     sed=None,
+    solver_kwargs: Optional[Dict[str, Any]] = None,
 ) -> MultiBandLC:
     """
     Return a multi-band light curve on an observer-frame time grid.
@@ -585,8 +604,11 @@ def lightcurve_multiband(
 
     engine = _get_engine(model)
     model_vector = _resolve_forward_params(model, params=params, allow_missing_tfloor=False)
+    solver = _resolve_solver_kwargs(solver_kwargs)
     DL_cm = ctx.distance.get_DL_cm()
-    t_s, Lbol, Teff, Rph = _solve_state(engine, model_vector, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    t_s, Lbol, Teff, Rph = _solve_state(
+        engine, model_vector, **solver, t_max_days_obs=t_max_days, z=z
+    )
     _validate_solved_state(Lbol, Teff, Rph)
     t_days = _t_grid_days_from_ts(t_s, z=z)
     y_grid = evaluate_multiband_observer_output(
@@ -618,11 +640,10 @@ def predict_multiband(
     y_kind: Literal["mag", "flux"] = "mag",
     mag_system: Literal["ab", "vega"] = "ab",
     extinction: Optional[Dict[str, Any] | ExtinctionSpec] = None,
-    Nx: int = 100,
-    Ny: int = 1000,
     t_max_days: float = 150.0,
     interp_fill: Literal["edge", "nan", "raise"] = "nan",
     sed=None,
+    solver_kwargs: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
     """
     Predict multi-band observables at observer-frame times `t_days`.
@@ -664,8 +685,11 @@ def predict_multiband(
 
     engine = _get_engine(model)
     model_vector = _resolve_forward_params(model, params=params, allow_missing_tfloor=False)
+    solver = _resolve_solver_kwargs(solver_kwargs)
     DL_cm = ctx.distance.get_DL_cm()
-    t_s, Lbol, Teff, Rph = _solve_state(engine, model_vector, Nx=Nx, Ny=Ny, t_max_days_obs=t_max_days, z=z)
+    t_s, Lbol, Teff, Rph = _solve_state(
+        engine, model_vector, **solver, t_max_days_obs=t_max_days, z=z
+    )
     _validate_solved_state(Lbol, Teff, Rph)
     t_grid_days = _t_grid_days_from_ts(t_s, z=z)
     y_grid = evaluate_multiband_observer_output(
@@ -1044,6 +1068,13 @@ def _split_fit_model_kwargs(model_kwargs: Optional[Dict[str, Any]]):
             "model_kwargs['interp_fill']='edge' is not allowed in fitting. "
             "Use 'nan' or 'raise' to avoid out-of-range edge extrapolation."
         )
+
+    solver_kwargs = dict(mk.pop("solver_kwargs", {}) or {})
+    for key in ("Nx", "Ny"):
+        if key in mk:
+            solver_kwargs[key] = mk.pop(key)
+    if solver_kwargs:
+        mk["solver_kwargs"] = _resolve_solver_kwargs(solver_kwargs)
 
     return mk, fill
 
