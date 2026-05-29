@@ -206,16 +206,19 @@ def _prepare_plot_model_kwargs(model_kwargs: Dict[str, Any], required_t_max_days
     return mk
 
 
-def _best_subset(samples: np.ndarray, log_prob: Optional[np.ndarray], max_n: int) -> np.ndarray:
+def _best_subset(samples: np.ndarray, log_prob: Optional[np.ndarray], max_n: Optional[int]) -> np.ndarray:
     samples = np.asarray(samples, float)
-    if samples.shape[0] <= max_n:
-        return samples
+    finite = np.all(np.isfinite(samples), axis=1)
     if log_prob is not None:
-        lp = np.asarray(log_prob, float)
-        order = np.argsort(lp)[::-1]
-        return samples[order[:max_n]]
+        lp = np.asarray(log_prob, float).reshape(-1)
+        if lp.shape[0] == samples.shape[0]:
+            finite &= np.isfinite(lp)
+    samples = samples[finite]
+
+    if max_n is None or samples.shape[0] <= int(max_n):
+        return samples
     rng = np.random.default_rng(123)
-    idx = rng.choice(samples.shape[0], size=max_n, replace=False)
+    idx = rng.choice(samples.shape[0], size=int(max_n), replace=False)
     return samples[idx]
 
 
@@ -308,7 +311,7 @@ def corner(
     pad_frac: float = 0.06,
     smooth: float = 1.0,
     bins: int = 35,
-    max_points: int = 12000,
+    max_points: Optional[int] = None,
     debug: bool = False,
     title_fmt: str = ".3f",
     levels: Tuple[float, float, float] = (0.68, 0.95, 0.997),
