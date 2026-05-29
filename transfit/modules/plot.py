@@ -95,7 +95,11 @@ def _param_label_latex(name: str) -> str:
     n = str(name)
     if n in _PARAM_LABELS_LATEX:
         return _PARAM_LABELS_LATEX[n]
-    return rf"${n.replace('_', r'\_')}$"
+    if n.startswith("$") and n.endswith("$"):
+        return n
+    if "\\" in n:
+        return "$" + n + "$"
+    return "$" + n.replace("_", r"\_") + "$"
 
 
 # -----------------------------------------------------------------------------
