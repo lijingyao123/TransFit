@@ -16,6 +16,7 @@ class UniformBoundsPrior:
             raise ValueError("bounds must be shape (ndim, 2)")
         if len(self.param_names) != b.shape[0]:
             raise ValueError("param_names length must match bounds ndim")
+        object.__setattr__(self, "bounds", b)
 
     def lnprior(self, theta: np.ndarray) -> float:
         theta = np.asarray(theta, float)
@@ -73,6 +74,7 @@ class MixedBoundsPrior:
                     f"log-uniform prior requires positive bounds; invalid params: {names}"
                 )
 
+        object.__setattr__(self, "bounds", b)
         object.__setattr__(self, "log_flags", lf)
 
     def lnprior(self, theta: np.ndarray) -> float:

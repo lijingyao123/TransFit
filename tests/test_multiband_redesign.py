@@ -27,7 +27,7 @@ from transfit.modules.likelihood import (
 from transfit.modules.magnitudes import fnu_grid_to_vega_mag_grid
 from transfit.modules.photometry import evaluate_multiband_observer_output
 from transfit.modules.sed import BlackbodySED
-from transfit.priors import MixedBoundsPrior
+from transfit.priors import MixedBoundsPrior, UniformBoundsPrior
 from transfit.samplers import run_emcee, run_zeus
 
 MU_7P5_MPC = 29.37530631695874
@@ -302,6 +302,36 @@ def test_public_fit_rejects_fixed_ni_mass_larger_than_ejecta():
             model="nickel",
             fixed={"M_ej": 0.5, "M_Ni": 0.6},
         )
+
+
+def test_uniform_bounds_prior_normalizes_list_bounds():
+    prior = UniformBoundsPrior(bounds=[[0.0, 1.0]], param_names=["x"])
+
+    assert isinstance(prior.bounds, np.ndarray)
+    assert prior.lnprior([0.5]) == pytest.approx(0.0)
+
+    samples = prior.sample(4, rng=np.random.default_rng(123))
+    assert samples.shape == (4, 1)
+    assert np.all(np.isfinite(samples))
+    assert np.all((samples > 0.0) & (samples < 1.0))
+
+
+def test_mixed_bounds_prior_normalizes_list_bounds_and_log_flags():
+    prior = MixedBoundsPrior(
+        bounds=[[0.1, 1.0], [1.0, 10.0]],
+        param_names=["x", "y"],
+        log_flags=[True, False],
+    )
+
+    assert isinstance(prior.bounds, np.ndarray)
+    assert isinstance(prior.log_flags, np.ndarray)
+    assert prior.lnprior([0.5, 2.0]) == pytest.approx(-np.log(0.5))
+
+    samples = prior.sample(4, rng=np.random.default_rng(123))
+    assert samples.shape == (4, 2)
+    assert np.all(np.isfinite(samples))
+    assert np.all((samples[:, 0] > 0.1) & (samples[:, 0] < 1.0))
+    assert np.all((samples[:, 1] > 1.0) & (samples[:, 1] < 10.0))
 
 
 def test_mcmc_backends_treat_nsteps_as_production_length():
