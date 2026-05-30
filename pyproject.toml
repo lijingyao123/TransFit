@@ -38,6 +38,7 @@ dependencies = [
   "numpy",
   "numba",
   "astropy",
+  "scipy",
 ]
 
 [project.optional-dependencies]
