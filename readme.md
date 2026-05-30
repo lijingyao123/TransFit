@@ -367,6 +367,7 @@ For questions about this project, please contact the following by email:
 
 - Liangduan Liu ([liuld@ccnu.edu.cn])
 - Yuhao Zhang ([zhangyh2001@foxmail.com])
+- GuangLei Wu ([wuguanglei@mails.ccnu.edu.cn])
 
 ## Citation
 
@@ -758,6 +759,7 @@ bol = tf.lightcurve_bol(
 
 - Liangduan Liu ([liuld@ccnu.edu.cn])
 - Yuhao Zhang ([zhangyh2001@foxmail.com])
+- GuangLei Wu ([wuguanglei@mails.ccnu.edu.cn])
 
 ## 引用
 
