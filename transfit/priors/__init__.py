@@ -5,7 +5,6 @@ import numpy as np
 
 from ..model_registry import canonical_model_name
 from .common import UniformBoundsPrior, MixedBoundsPrior, apply_user_bounds
-from .nuisance import LIKELIHOOD_NUISANCE_PARAM_SPECS
 
 
 def build_bounds(
@@ -38,5 +37,4 @@ __all__ = [
     "UniformBoundsPrior",
     "MixedBoundsPrior",
     "build_bounds",
-    "LIKELIHOOD_NUISANCE_PARAM_SPECS",
 ]

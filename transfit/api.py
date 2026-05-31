@@ -16,7 +16,8 @@ from .modules.photometry import evaluate_multiband_observer_output
 from .modules.sed import BlackbodySED
 from .model_registry import canonical_model_name, forward_param_defaults
 from .samplers import FitResult, run_emcee, run_zeus, run_dynesty
-from .priors import LIKELIHOOD_NUISANCE_PARAM_SPECS, MixedBoundsPrior, build_bounds
+from .priors import MixedBoundsPrior, build_bounds
+from .priors.nuisance import LIKELIHOOD_NUISANCE_PARAM_SPECS
 from transfit.constants import DAY, MPC, PC
 
 
