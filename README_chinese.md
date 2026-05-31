@@ -1,7 +1,7 @@
-# TransFit
+# TransFit 简体中文版
 
 <p align="right">
-  <strong>Language:</strong> English | <a href="README_chinese.md">简体中文</a>
+  <strong>语言：</strong><a href="README.md">English</a> | 简体中文
 </p>
 
 ---
@@ -22,27 +22,26 @@
 </p>
 
 <p>
-  <a href="examples/tutorial.ipynb">Tutorial Notebook</a> |
-  <a href="examples/tutorial_zh.ipynb">Simplified Chinese Tutorial</a> |
-  <a href="examples/data">Example Data</a> |
-  <a href="#usage">Usage</a> |
-  <a href="https://doi.org/10.3847/1538-4357/adfed6">Paper</a>
+  <a href="examples/tutorial_zh.ipynb">简体中文教程 Notebook</a> |
+  <a href="examples/tutorial.ipynb">English Tutorial</a> |
+  <a href="examples/data">示例数据</a> |
+  <a href="#使用方式">使用方式</a> |
+  <a href="https://doi.org/10.3847/1538-4357/adfed6">论文</a>
 </p>
 
-<p><strong>TransFit</strong> is a light-curve fitting framework for astronomical transients such as supernovae. It supports both forward modeling and Bayesian fitting, and its multi-band pipeline always computes observer-frame <code>f_nu</code> before applying extinction and converting to flux or magnitudes.</p>
-<p>All public time inputs and outputs use observer-frame days. Internal model evolution is still solved in rest-frame time and transformed by <code>(1+z)</code> before being exposed through the public API.</p>
+<p><strong>TransFit</strong> 是一个面向超新星等瞬变天体的光变曲线拟合框架。它既支持理论光变计算，也支持 MCMC 贝叶斯拟合；在多波段路径里，内部统一先计算 observer-frame <code>f_nu</code>，再施加消光并转换成流量或星等。</p>
 
 </td>
 </tr>
 </table>
 
-## Introduction
+## 简介
 
-TransFit is designed for two common tasks:
-- draw theoretical bolometric or multi-band light curves
-- fit observed data with MCMC samplers and inspect the posterior
+TransFit 主要面向两类任务：
+- 画理论测光光变或多波段光变
+- 用 MCMC 拟合观测数据并查看后验结果
 
-Main public interfaces:
+最常用的公开接口是：
 - `tf.lightcurve_bol(...)`
 - `tf.lightcurve_multiband(...)`
 - `tf.fit_bol(...)`
@@ -50,14 +49,14 @@ Main public interfaces:
 - `tf.save(...)`
 - `tf.load(...)`
 
-The standard workflow is intentionally small: build a data container, fit it,
-read parameters from `res.best_params` / `res.best_params_raw`, and plot with
-`tf.plot.fit(...)`. Numerical grid controls such as `Nx` and `Ny` are advanced
-settings under `solver_kwargs`, not top-level beginner arguments.
+标准工作流保持精简：先构造数据容器，再拟合，然后从
+`res.best_params` / `res.best_params_raw` 读取参数，并用
+`tf.plot.fit(...)` 画图。`Nx`、`Ny` 这类数值网格设置属于高级选项，
+放在 `solver_kwargs` 里，不作为初级入口参数。
 
-## Installation
+## 安装方式
 
-Clone the repository and install it in editable mode:
+先克隆仓库，然后用 editable 模式安装：
 
 ```bash
 git clone <your-repo-url>
@@ -65,21 +64,21 @@ cd TransFit
 python -m pip install -e .
 ```
 
-If you want to run the notebooks or plotting examples, install the example extras:
+如果你想运行 notebook 或绘图示例，安装示例依赖：
 
 ```bash
 python -m pip install -e .[examples]
 ```
 
-If you also want fitting backends and corner plots, install the full optional extras:
+如果你还想安装拟合后端和角图依赖，可以直接安装完整可选依赖：
 
 ```bash
 python -m pip install -e .[all]
 ```
 
-## Usage
+## 使用方式
 
-If you want to check the parameter names of a model first:
+如果你想先查看某个模型需要哪些参数，可以直接运行：
 
 ```python
 import transfit as tf
@@ -88,9 +87,9 @@ tf.model_param_names("nickel")
 tf.param_template("nickel")
 ```
 
-### 1. Draw a Light Curve
+### 1. 如何画一个光变曲线
 
-Bolometric example:
+测光光变示例：
 
 ```python
 import matplotlib.pyplot as plt
@@ -122,7 +121,7 @@ ax.set_xlabel("Observer time (days)")
 ax.set_ylabel("Bolometric luminosity (erg s$^{-1}$)")
 ```
 
-Multi-band example:
+多波段光变示例：
 
 ```python
 import matplotlib.pyplot as plt
@@ -169,14 +168,14 @@ ax.set_ylabel("Vega magnitude")
 ax.legend()
 ```
 
-### 2. Fit Data
+### 2. 如何拟合
 
-Prepare the matching data container first:
+先准备对应的数据容器：
 
 - `tf.BolometricData(t_days, y, yerr, mask=None)`
 - `tf.MultiBandData(t_days, band, y, yerr, mask=None)`
 
-Bolometric fit example:
+测光拟合示例：
 
 ```python
 import numpy as np
@@ -223,7 +222,7 @@ params_best = res_bol.best_params_raw
 print(res_bol.best_fit)
 ```
 
-Multi-band fit example:
+多波段拟合示例：
 
 ```python
 import numpy as np
@@ -303,7 +302,7 @@ params_best = res_mb.best_params_raw
 print(res_mb.best_fit)
 ```
 
-Plot fitted results and save the chain:
+拟合完成后，可以直接画图并保存链：
 
 ```python
 fig_bol = tf.plot.fit_bol(res_bol, data=data_bol, show_1sigma=True)
@@ -316,32 +315,30 @@ print(path)
 print(loaded["samples"].shape)
 ```
 
-### Result API
+### 结果 API
 
-`fit_bol()` and `fit_multiband()` return a `FitResult`. The main result
-properties are:
+`fit_bol()` 和 `fit_multiband()` 返回 `FitResult`。主要结果入口是：
 
 ```python
-res.best_params       # rounded best-fit parameter dict, includes t_shift
-res.best_params_raw   # full-precision best-fit parameter dict
-res.median_params     # posterior median parameter dict
-res.best_fit          # compact report with params, errors, log_prob, sample
-res.samples           # flattened posterior samples
-res.log_prob          # log posterior values for samples
-res.meta              # priors, bounds, sampler metadata, model settings
+res.best_params       # 四舍五入后的最佳参数 dict，包含 t_shift
+res.best_params_raw   # 全精度最佳参数 dict
+res.median_params     # 后验中位数参数 dict
+res.best_fit          # 包含 params、errors、log_prob、sample 的摘要
+res.samples           # 展平后的后验样本
+res.log_prob          # 每个样本的 log posterior
+res.meta              # priors、bounds、sampler 和模型设置元数据
 ```
 
-`t_shift` is non-negative and follows:
+`t_shift` 是非负量，约定为：
 
 ```python
 t_model = t_obs + t_shift
 ```
 
-For fitting, `t_max_days` is chosen automatically from the data and the upper
-allowed `t_shift` value. If you explicitly provide it through `model_kwargs`,
-it must cover `max(data.t_days) + t_shift_upper`.
+拟合时 `t_max_days` 会根据数据和允许的 `t_shift` 上界自动选择。如果用户通过
+`model_kwargs` 显式指定它，必须至少覆盖 `max(data.t_days) + t_shift_upper`。
 
-Advanced numerical-grid settings are passed as:
+高级数值网格设置写作：
 
 ```python
 model_kwargs={
@@ -349,7 +346,7 @@ model_kwargs={
 }
 ```
 
-For forward calculations:
+正向计算时也可以这样写：
 
 ```python
 bol = tf.lightcurve_bol(
@@ -359,17 +356,17 @@ bol = tf.lightcurve_bol(
 )
 ```
 
-## Contact
+## 联系方式
 
-For questions about this project, please contact the following by email:
+如有问题，可通过邮件联系：
 
 - Liangduan Liu ([liuld@ccnu.edu.cn])
 - Yuhao Zhang ([zhangyh2001@foxmail.com])
 - GuangLei Wu ([wuguanglei@mails.ccnu.edu.cn])
 
-## Citation
+## 引用
 
-If you use this software in research, please cite:
+如果你在科研工作中使用了本软件，请引用：
 
 ```bibtex
 @ARTICLE{2025ApJ...992...20L,
@@ -387,4 +384,4 @@ archivePrefix = {arXiv},
 }
 ```
 
-Some code and tutorial content were generated by Codex.
+部分代码与教程内容由 Codex 协助生成。
