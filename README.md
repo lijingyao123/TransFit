@@ -4,60 +4,96 @@
   <strong>Language:</strong> English | <a href="README_chinese.md">简体中文</a>
 </p>
 
----
+<p align="center">
+  <img src="docs/TransFit_logo.png" width="430" alt="TransFit logo">
+</p>
 
-<table>
-<tr>
-<td width="42%" align="center" valign="top">
-  <img src="docs/TransFit_logo.png" width="420" alt="TransFit logo">
-</td>
-<td width="58%" valign="top">
-
-<p>
+<p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB">
+  <img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue">
   <img alt="Inference" src="https://img.shields.io/badge/Inference-MCMC-C0392B">
   <img alt="Models" src="https://img.shields.io/badge/Models-Diffusion%20Powered-1F4E79">
   <img alt="Data" src="https://img.shields.io/badge/Data-Bolometric%20%7C%20Multi--band-2E8B57">
   <img alt="Acceleration" src="https://img.shields.io/badge/Acceleration-Numba-00A3E0">
 </p>
 
-<p>
+<p align="center">
+  <a href="#installation">Install</a> |
+  <a href="#quick-start">Quick Start</a> |
+  <a href="#public-api">Public API</a> |
   <a href="examples/tutorial.ipynb">Tutorial Notebook</a> |
-  <a href="examples/tutorial_zh.ipynb">Simplified Chinese Tutorial</a> |
   <a href="examples/data">Example Data</a> |
-  <a href="#usage">Usage</a> |
   <a href="https://doi.org/10.3847/1538-4357/adfed6">Paper</a>
 </p>
 
-<p><strong>TransFit</strong> is a light-curve fitting framework for astronomical transients such as supernovae. It supports both forward modeling and Bayesian fitting, and its multi-band pipeline always computes observer-frame <code>f_nu</code> before applying extinction and converting to flux or magnitudes.</p>
-<p>All public time inputs and outputs use observer-frame days. Internal model evolution is still solved in rest-frame time and transformed by <code>(1+z)</code> before being exposed through the public API.</p>
+TransFit is a light-curve modeling and fitting framework for astronomical
+transients such as supernovae. It provides a compact Python interface for
+forward modeling, bolometric fitting, and multi-band photometric fitting with
+Bayesian samplers.
 
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Example Outputs](#example-outputs)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+  - [Inspect Model Parameters](#inspect-model-parameters)
+  - [Forward Light Curves](#forward-light-curves)
+  - [Fit Data](#fit-data)
+- [Public API](#public-api)
+- [Validation](#validation)
+- [Documentation](#documentation)
+- [Contact](#contact)
+- [Citation](#citation)
+
+---
+
+## Features
+
+### Physical Light-curve Models
+
+- Diffusion-powered transient light-curve models with bolometric outputs.
+- Nickel, magnetar, and magnetar-plus-nickel model families through a unified
+  parameter interface.
+
+### Multi-band Photometry
+
+- Multi-band light curves in flux or magnitude space.
+- Filter mapping through stable band names such as `B`, `V`, `R`, and `I`.
+- Extinction and photometric-system support.
+
+### Bayesian Fitting
+
+- Bolometric and multi-band fitting with the same result object.
+- Sampler support through optional backends including `emcee`, `zeus`, and
+  `dynesty`.
+- Compact result access through `res.best_params`, `res.best_params_raw`,
+  `res.median_params`, and `res.best_fit`.
+
+---
+
+## Example Outputs
+
+<table>
+<tr>
+<td width="50%" align="center">
+  <img src="docs/lightcurve_bol.png" alt="Bolometric light curve example"><br>
+  <sub>Bolometric light curve</sub>
+</td>
+<td width="50%" align="center">
+  <img src="docs/lightcurve_multiband.png" alt="Multi-band light curve example"><br>
+  <sub>Multi-band light curve</sub>
 </td>
 </tr>
 </table>
 
-## Introduction
-
-TransFit is designed for two common tasks:
-- draw theoretical bolometric or multi-band light curves
-- fit observed data with MCMC samplers and inspect the posterior
-
-Main public interfaces:
-- `tf.lightcurve_bol(...)`
-- `tf.lightcurve_multiband(...)`
-- `tf.fit_bol(...)`
-- `tf.fit_multiband(...)`
-- `tf.save(...)`
-- `tf.load(...)`
-
-The standard workflow is intentionally small: build a data container, fit it,
-read parameters from `res.best_params` / `res.best_params_raw`, and plot with
-`tf.plot.fit(...)`. Numerical grid controls such as `Nx` and `Ny` are advanced
-settings under `solver_kwargs`, not top-level beginner arguments.
+---
 
 ## Installation
 
-Clone the repository and install it in editable mode:
+Clone the repository and install TransFit in editable mode:
 
 ```bash
 git clone <your-repo-url>
@@ -65,21 +101,23 @@ cd TransFit
 python -m pip install -e .
 ```
 
-If you want to run the notebooks or plotting examples, install the example extras:
+Install example and plotting dependencies when you want to run notebooks:
 
 ```bash
-python -m pip install -e .[examples]
+python -m pip install -e ".[examples,plot]"
 ```
 
-If you also want fitting backends and corner plots, install the full optional extras:
+Install all optional fitting backends:
 
 ```bash
-python -m pip install -e .[all]
+python -m pip install -e ".[all]"
 ```
 
-## Usage
+---
 
-If you want to check the parameter names of a model first:
+## Quick Start
+
+### Inspect Model Parameters
 
 ```python
 import transfit as tf
@@ -88,9 +126,9 @@ tf.model_param_names("nickel")
 tf.param_template("nickel")
 ```
 
-### 1. Draw a Light Curve
+### Forward Light Curves
 
-Bolometric example:
+Bolometric light curve:
 
 ```python
 import matplotlib.pyplot as plt
@@ -122,7 +160,7 @@ ax.set_xlabel("Observer time (days)")
 ax.set_ylabel("Bolometric luminosity (erg s$^{-1}$)")
 ```
 
-Multi-band example:
+Multi-band light curve:
 
 ```python
 import matplotlib.pyplot as plt
@@ -161,22 +199,17 @@ mb = tf.lightcurve_multiband(
 )
 
 fig, ax = plt.subplots()
-for b in mb.bands:
-    ax.plot(mb.t_days, mb.y[b], label=b)
+for band in mb.bands:
+    ax.plot(mb.t_days, mb.y[band], label=band)
 ax.invert_yaxis()
 ax.set_xlabel("Observer time (days)")
 ax.set_ylabel("Vega magnitude")
 ax.legend()
 ```
 
-### 2. Fit Data
+### Fit Data
 
-Prepare the matching data container first:
-
-- `tf.BolometricData(t_days, y, yerr, mask=None)`
-- `tf.MultiBandData(t_days, band, y, yerr, mask=None)`
-
-Bolometric fit example:
+Prepare a data container:
 
 ```python
 import numpy as np
@@ -190,7 +223,11 @@ data_bol = tf.BolometricData(
     y=arr[:, 1],
     yerr=arr[:, 2],
 )
+```
 
+Run a bolometric fit:
+
+```python
 res_bol = tf.fit_bol(
     data=data_bol,
     model="nickel",
@@ -201,7 +238,6 @@ res_bol = tf.fit_bol(
         "E_Th_in": (0.05, 8.0),
         "M_Ni": ("log10", -3.0, -0.2),
         "R_0": (10.0, 400.0),
-        "t_shift": (0.0, 30.0),
     },
     fixed={
         "x_Ni": 0.2,
@@ -219,153 +255,100 @@ res_bol = tf.fit_bol(
     },
 )
 
-params_best = res_bol.best_params_raw
+print(res_bol.best_params_raw)
 print(res_bol.best_fit)
 ```
 
-Multi-band fit example:
+Plot and save results:
 
 ```python
-import numpy as np
-import pandas as pd
-import transfit as tf
+fig = tf.plot.fit_bol(res_bol, data=data_bol, show_1sigma=True)
 
-df = pd.read_csv("examples/data/sn2007gr.csv")
-t0 = float(np.nanmin(df["JD"].to_numpy(float)))
-df["t_days"] = df["JD"].to_numpy(float) - t0
-
-rows = []
-for band_name, ycol, ecol in [
-    ("B", "Bmag", "e_Bmag"),
-    ("V", "Vmag", "e_Vmag"),
-    ("R", "Rmag", "e_Rmag"),
-    ("I", "Imag", "e_Imag"),
-]:
-    m = df[ycol].notna() & df[ecol].notna()
-    rows.append(
-        pd.DataFrame(
-            {
-                "t_days": df.loc[m, "t_days"].to_numpy(float),
-                "band": band_name,
-                "y": df.loc[m, ycol].to_numpy(float),
-                "yerr": df.loc[m, ecol].to_numpy(float),
-            }
-        )
-    )
-
-long_df = pd.concat(rows, ignore_index=True)
-
-data_mb = tf.MultiBandData(
-    t_days=long_df["t_days"].to_numpy(float),
-    band=long_df["band"].to_numpy(str),
-    y=long_df["y"].to_numpy(float),
-    yerr=long_df["yerr"].to_numpy(float),
-)
-
-filters = {
-    "B": "johnson_cousins.B",
-    "V": "johnson_cousins.V",
-    "R": "johnson_cousins.R",
-    "I": "johnson_cousins.I",
-}
-
-res_mb = tf.fit_multiband(
-    data=data_mb,
-    model="nickel",
-    z=0.001728,
-    distance_modulus=29.84,
-    filters=filters,
-    y_kind="mag",
-    mag_system="vega",
-    extinction={"mw": {"ebv": 0.04, "rv": 3.1, "law": "odonnell94"}},
-    priors={
-        "M_ej": (1.0, 5.0),
-        "v_ej": (0.3, 3.0),
-        "E_Th_in": (0.05, 8.0),
-        "M_Ni": (0.01, 0.5),
-        "R_0": (10.0, 400.0),
-        "T_floor": (3000.0, 8000.0),
-        "t_shift": (0.0, 30.0),
-    },
-    fixed={"kappa": 0.06},
-    sampler="emcee",
-    sampler_kwargs={
-        "nwalkers": 32,
-        "nsteps": 600,
-        "burnin": 200,
-        "thin": 5,
-        "seed": 123,
-        "progress": True,
-    },
-)
-
-params_best = res_mb.best_params_raw
-print(res_mb.best_fit)
-```
-
-Plot fitted results and save the chain:
-
-```python
-fig_bol = tf.plot.fit_bol(res_bol, data=data_bol, show_1sigma=True)
-fig_mb = tf.plot.fit_multiband(res_mb, data=data_mb, show_1sigma=True)
-corner_fig = tf.plot.corner(res_mb)
-
-path = tf.save(res_mb, path="mcmc_out/fit_nickel_multiband_demo.npz")
+path = tf.save(res_bol, path="mcmc_out/fit_nickel_bol_demo.npz")
 loaded = tf.load(path)
 print(path)
 print(loaded["samples"].shape)
 ```
 
-### Result API
+---
+
+## Public API
+
+The main public entry points are:
+
+```python
+tf.BolometricData(t_days, y, yerr, mask=None)
+tf.MultiBandData(t_days, band, y, yerr, mask=None)
+
+tf.model_param_names(model)
+tf.param_template(model)
+
+tf.lightcurve_bol(model=..., params=..., z=..., t_max_days=...)
+tf.lightcurve_multiband(model=..., params=..., z=..., distance_modulus=..., filters=..., bands=...)
+
+tf.fit_bol(data=..., model=..., z=..., priors=..., fixed=...)
+tf.fit_multiband(data=..., model=..., z=..., distance_modulus=..., filters=..., priors=..., fixed=...)
+
+tf.save(res, path=None)
+tf.load(path, trusted=False)
+```
+
+Advanced interpolation helpers are also available when you need model values at
+specific observation times:
+
+```python
+tf.predict_bol(...)
+tf.predict_multiband(...)
+```
 
 `fit_bol()` and `fit_multiband()` return a `FitResult`. The main result
 properties are:
 
 ```python
-res.best_params       # rounded best-fit parameter dict, includes t_shift
+res.best_params       # rounded best-fit parameter dict
 res.best_params_raw   # full-precision best-fit parameter dict
 res.median_params     # posterior median parameter dict
 res.best_fit          # compact report with params, errors, log_prob, sample
+res.best_index        # index of the best posterior sample
+res.best_log_prob     # best log posterior value
+res.best_sample       # raw best posterior sample vector
 res.samples           # flattened posterior samples
 res.log_prob          # log posterior values for samples
 res.meta              # priors, bounds, sampler metadata, model settings
 ```
 
-`t_shift` is non-negative and follows:
+## Validation
 
-```python
-t_model = t_obs + t_shift
+Run the test suite with:
+
+```bash
+python -m pytest -q
 ```
 
-For fitting, `t_max_days` is chosen automatically from the data and the upper
-allowed `t_shift` value. If you explicitly provide it through `model_kwargs`,
-it must cover `max(data.t_days) + t_shift_upper`.
+The current tests cover the public API, fitting workflow, multi-band
+photometry, extinction handling, and result-object accessors.
 
-Advanced numerical-grid settings are passed as:
+---
 
-```python
-model_kwargs={
-    "solver_kwargs": {"Nx": 100, "Ny": 1000},
-}
-```
+## Documentation
 
-For forward calculations:
+- [Tutorial notebook](examples/tutorial.ipynb)
+- [Example data](examples/data)
+- [Multi-band photometry design](docs/multiband_photometry_design.md)
+- [Model parameter reference](docs/model_parameter_reference.tex)
+- [Physical regression and convergence tests](examples/physical_regression_and_convergence_tests.ipynb)
 
-```python
-bol = tf.lightcurve_bol(
-    model="nickel",
-    params=params_best,
-    solver_kwargs={"Nx": 100, "Ny": 1000},
-)
-```
+---
 
 ## Contact
 
-For questions about this project, please contact the following by email:
+For questions about this project, please contact:
 
-- Liangduan Liu ([liuld@ccnu.edu.cn])
-- Yuhao Zhang ([zhangyh2001@foxmail.com])
-- GuangLei Wu ([wuguanglei@mails.ccnu.edu.cn])
+- Liangduan Liu ([liuld@ccnu.edu.cn](mailto:liuld@ccnu.edu.cn))
+- Yuhao Zhang ([zhangyh2001@foxmail.com](mailto:zhangyh2001@foxmail.com))
+- GuangLei Wu ([wuguanglei@mails.ccnu.edu.cn](mailto:wuguanglei@mails.ccnu.edu.cn))
+
+---
 
 ## Citation
 
@@ -387,4 +370,4 @@ archivePrefix = {arXiv},
 }
 ```
 
-Some code and tutorial content were generated by Codex.
+Some code and tutorial content were generated with assistance from Codex.

@@ -4,59 +4,93 @@
   <strong>语言：</strong><a href="README.md">English</a> | 简体中文
 </p>
 
----
+<p align="center">
+  <img src="docs/TransFit_logo.png" width="430" alt="TransFit logo">
+</p>
 
-<table>
-<tr>
-<td width="42%" align="center" valign="top">
-  <img src="docs/TransFit_logo.png" width="420" alt="TransFit logo">
-</td>
-<td width="58%" valign="top">
-
-<p>
+<p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB">
+  <img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue">
   <img alt="Inference" src="https://img.shields.io/badge/Inference-MCMC-C0392B">
   <img alt="Models" src="https://img.shields.io/badge/Models-Diffusion%20Powered-1F4E79">
   <img alt="Data" src="https://img.shields.io/badge/Data-Bolometric%20%7C%20Multi--band-2E8B57">
   <img alt="Acceleration" src="https://img.shields.io/badge/Acceleration-Numba-00A3E0">
 </p>
 
-<p>
-  <a href="examples/tutorial_zh.ipynb">简体中文教程 Notebook</a> |
-  <a href="examples/tutorial.ipynb">English Tutorial</a> |
+<p align="center">
+  <a href="#安装方式">安装</a> |
+  <a href="#快速开始">快速开始</a> |
+  <a href="#公开-api">公开 API</a> |
+  <a href="examples/tutorial.ipynb">教程 Notebook</a> |
   <a href="examples/data">示例数据</a> |
-  <a href="#使用方式">使用方式</a> |
   <a href="https://doi.org/10.3847/1538-4357/adfed6">论文</a>
 </p>
 
-<p><strong>TransFit</strong> 是一个面向超新星等瞬变天体的光变曲线拟合框架。它既支持理论光变计算，也支持 MCMC 贝叶斯拟合；在多波段路径里，内部统一先计算 observer-frame <code>f_nu</code>，再施加消光并转换成流量或星等。</p>
+TransFit 是一个面向超新星等瞬变天体的光变曲线建模与拟合框架。它提供精简的
+Python 接口，用于理论光变计算、测光光变拟合和多波段测光拟合，并支持贝叶斯
+采样器。
 
+---
+
+## 目录
+
+- [主要功能](#主要功能)
+- [示例输出](#示例输出)
+- [安装方式](#安装方式)
+- [快速开始](#快速开始)
+  - [查看模型参数](#查看模型参数)
+  - [正向计算光变曲线](#正向计算光变曲线)
+  - [拟合数据](#拟合数据)
+- [公开 API](#公开-api)
+- [验证](#验证)
+- [文档](#文档)
+- [联系方式](#联系方式)
+- [引用](#引用)
+
+---
+
+## 主要功能
+
+### 物理光变模型
+
+- 支持带扩散过程的瞬变天体测光光变模型。
+- 通过统一参数接口支持 nickel、magnetar 和 magnetar-plus-nickel 模型族。
+
+### 多波段测光
+
+- 支持流量空间或星等空间的多波段光变曲线。
+- 通过稳定的 band 名称映射滤光片，例如 `B`、`V`、`R` 和 `I`。
+- 支持消光和测光系统设置。
+
+### 贝叶斯拟合
+
+- 测光拟合和多波段拟合使用同一个结果对象。
+- 可选采样后端包括 `emcee`、`zeus` 和 `dynesty`。
+- 主要结果通过 `res.best_params`、`res.best_params_raw`、
+  `res.median_params` 和 `res.best_fit` 读取。
+
+---
+
+## 示例输出
+
+<table>
+<tr>
+<td width="50%" align="center">
+  <img src="docs/lightcurve_bol.png" alt="Bolometric light curve example"><br>
+  <sub>测光光变曲线</sub>
+</td>
+<td width="50%" align="center">
+  <img src="docs/lightcurve_multiband.png" alt="Multi-band light curve example"><br>
+  <sub>多波段光变曲线</sub>
 </td>
 </tr>
 </table>
 
-## 简介
-
-TransFit 主要面向两类任务：
-- 画理论测光光变或多波段光变
-- 用 MCMC 拟合观测数据并查看后验结果
-
-最常用的公开接口是：
-- `tf.lightcurve_bol(...)`
-- `tf.lightcurve_multiband(...)`
-- `tf.fit_bol(...)`
-- `tf.fit_multiband(...)`
-- `tf.save(...)`
-- `tf.load(...)`
-
-标准工作流保持精简：先构造数据容器，再拟合，然后从
-`res.best_params` / `res.best_params_raw` 读取参数，并用
-`tf.plot.fit(...)` 画图。`Nx`、`Ny` 这类数值网格设置属于高级选项，
-放在 `solver_kwargs` 里，不作为初级入口参数。
+---
 
 ## 安装方式
 
-先克隆仓库，然后用 editable 模式安装：
+克隆仓库并以 editable 模式安装：
 
 ```bash
 git clone <your-repo-url>
@@ -64,21 +98,23 @@ cd TransFit
 python -m pip install -e .
 ```
 
-如果你想运行 notebook 或绘图示例，安装示例依赖：
+如果需要运行 notebook 或绘图示例，安装示例和绘图依赖：
 
 ```bash
-python -m pip install -e .[examples]
+python -m pip install -e ".[examples,plot]"
 ```
 
-如果你还想安装拟合后端和角图依赖，可以直接安装完整可选依赖：
+如果需要安装全部可选拟合后端：
 
 ```bash
-python -m pip install -e .[all]
+python -m pip install -e ".[all]"
 ```
 
-## 使用方式
+---
 
-如果你想先查看某个模型需要哪些参数，可以直接运行：
+## 快速开始
+
+### 查看模型参数
 
 ```python
 import transfit as tf
@@ -87,9 +123,9 @@ tf.model_param_names("nickel")
 tf.param_template("nickel")
 ```
 
-### 1. 如何画一个光变曲线
+### 正向计算光变曲线
 
-测光光变示例：
+测光光变曲线：
 
 ```python
 import matplotlib.pyplot as plt
@@ -121,7 +157,7 @@ ax.set_xlabel("Observer time (days)")
 ax.set_ylabel("Bolometric luminosity (erg s$^{-1}$)")
 ```
 
-多波段光变示例：
+多波段光变曲线：
 
 ```python
 import matplotlib.pyplot as plt
@@ -160,22 +196,17 @@ mb = tf.lightcurve_multiband(
 )
 
 fig, ax = plt.subplots()
-for b in mb.bands:
-    ax.plot(mb.t_days, mb.y[b], label=b)
+for band in mb.bands:
+    ax.plot(mb.t_days, mb.y[band], label=band)
 ax.invert_yaxis()
 ax.set_xlabel("Observer time (days)")
 ax.set_ylabel("Vega magnitude")
 ax.legend()
 ```
 
-### 2. 如何拟合
+### 拟合数据
 
-先准备对应的数据容器：
-
-- `tf.BolometricData(t_days, y, yerr, mask=None)`
-- `tf.MultiBandData(t_days, band, y, yerr, mask=None)`
-
-测光拟合示例：
+先构造数据容器：
 
 ```python
 import numpy as np
@@ -189,7 +220,11 @@ data_bol = tf.BolometricData(
     y=arr[:, 1],
     yerr=arr[:, 2],
 )
+```
 
+运行测光拟合：
+
+```python
 res_bol = tf.fit_bol(
     data=data_bol,
     model="nickel",
@@ -200,7 +235,6 @@ res_bol = tf.fit_bol(
         "E_Th_in": (0.05, 8.0),
         "M_Ni": ("log10", -3.0, -0.2),
         "R_0": (10.0, 400.0),
-        "t_shift": (0.0, 30.0),
     },
     fixed={
         "x_Ni": 0.2,
@@ -218,151 +252,97 @@ res_bol = tf.fit_bol(
     },
 )
 
-params_best = res_bol.best_params_raw
+print(res_bol.best_params_raw)
 print(res_bol.best_fit)
 ```
 
-多波段拟合示例：
+画图并保存结果：
 
 ```python
-import numpy as np
-import pandas as pd
-import transfit as tf
+fig = tf.plot.fit_bol(res_bol, data=data_bol, show_1sigma=True)
 
-df = pd.read_csv("examples/data/sn2007gr.csv")
-t0 = float(np.nanmin(df["JD"].to_numpy(float)))
-df["t_days"] = df["JD"].to_numpy(float) - t0
-
-rows = []
-for band_name, ycol, ecol in [
-    ("B", "Bmag", "e_Bmag"),
-    ("V", "Vmag", "e_Vmag"),
-    ("R", "Rmag", "e_Rmag"),
-    ("I", "Imag", "e_Imag"),
-]:
-    m = df[ycol].notna() & df[ecol].notna()
-    rows.append(
-        pd.DataFrame(
-            {
-                "t_days": df.loc[m, "t_days"].to_numpy(float),
-                "band": band_name,
-                "y": df.loc[m, ycol].to_numpy(float),
-                "yerr": df.loc[m, ecol].to_numpy(float),
-            }
-        )
-    )
-
-long_df = pd.concat(rows, ignore_index=True)
-
-data_mb = tf.MultiBandData(
-    t_days=long_df["t_days"].to_numpy(float),
-    band=long_df["band"].to_numpy(str),
-    y=long_df["y"].to_numpy(float),
-    yerr=long_df["yerr"].to_numpy(float),
-)
-
-filters = {
-    "B": "johnson_cousins.B",
-    "V": "johnson_cousins.V",
-    "R": "johnson_cousins.R",
-    "I": "johnson_cousins.I",
-}
-
-res_mb = tf.fit_multiband(
-    data=data_mb,
-    model="nickel",
-    z=0.001728,
-    distance_modulus=29.84,
-    filters=filters,
-    y_kind="mag",
-    mag_system="vega",
-    extinction={"mw": {"ebv": 0.04, "rv": 3.1, "law": "odonnell94"}},
-    priors={
-        "M_ej": (1.0, 5.0),
-        "v_ej": (0.3, 3.0),
-        "E_Th_in": (0.05, 8.0),
-        "M_Ni": (0.01, 0.5),
-        "R_0": (10.0, 400.0),
-        "T_floor": (3000.0, 8000.0),
-        "t_shift": (0.0, 30.0),
-    },
-    fixed={"kappa": 0.06},
-    sampler="emcee",
-    sampler_kwargs={
-        "nwalkers": 32,
-        "nsteps": 600,
-        "burnin": 200,
-        "thin": 5,
-        "seed": 123,
-        "progress": True,
-    },
-)
-
-params_best = res_mb.best_params_raw
-print(res_mb.best_fit)
-```
-
-拟合完成后，可以直接画图并保存链：
-
-```python
-fig_bol = tf.plot.fit_bol(res_bol, data=data_bol, show_1sigma=True)
-fig_mb = tf.plot.fit_multiband(res_mb, data=data_mb, show_1sigma=True)
-corner_fig = tf.plot.corner(res_mb)
-
-path = tf.save(res_mb, path="mcmc_out/fit_nickel_multiband_demo.npz")
+path = tf.save(res_bol, path="mcmc_out/fit_nickel_bol_demo.npz")
 loaded = tf.load(path)
 print(path)
 print(loaded["samples"].shape)
 ```
 
-### 结果 API
+---
+
+## 公开 API
+
+主要公开入口是：
+
+```python
+tf.BolometricData(t_days, y, yerr, mask=None)
+tf.MultiBandData(t_days, band, y, yerr, mask=None)
+
+tf.model_param_names(model)
+tf.param_template(model)
+
+tf.lightcurve_bol(model=..., params=..., z=..., t_max_days=...)
+tf.lightcurve_multiband(model=..., params=..., z=..., distance_modulus=..., filters=..., bands=...)
+
+tf.fit_bol(data=..., model=..., z=..., priors=..., fixed=...)
+tf.fit_multiband(data=..., model=..., z=..., distance_modulus=..., filters=..., priors=..., fixed=...)
+
+tf.save(res, path=None)
+tf.load(path, trusted=False)
+```
+
+如果需要在指定观测时间点计算模型值，也可以使用高级插值辅助函数：
+
+```python
+tf.predict_bol(...)
+tf.predict_multiband(...)
+```
 
 `fit_bol()` 和 `fit_multiband()` 返回 `FitResult`。主要结果入口是：
 
 ```python
-res.best_params       # 四舍五入后的最佳参数 dict，包含 t_shift
+res.best_params       # 四舍五入后的最佳参数 dict
 res.best_params_raw   # 全精度最佳参数 dict
 res.median_params     # 后验中位数参数 dict
 res.best_fit          # 包含 params、errors、log_prob、sample 的摘要
+res.best_index        # 最佳后验样本的索引
+res.best_log_prob     # 最佳 log posterior 值
+res.best_sample       # 原始最佳后验样本向量
 res.samples           # 展平后的后验样本
 res.log_prob          # 每个样本的 log posterior
 res.meta              # priors、bounds、sampler 和模型设置元数据
 ```
 
-`t_shift` 是非负量，约定为：
+## 验证
 
-```python
-t_model = t_obs + t_shift
+运行测试：
+
+```bash
+python -m pytest -q
 ```
 
-拟合时 `t_max_days` 会根据数据和允许的 `t_shift` 上界自动选择。如果用户通过
-`model_kwargs` 显式指定它，必须至少覆盖 `max(data.t_days) + t_shift_upper`。
+当前测试覆盖公开 API、拟合流程、多波段测光、消光处理和结果对象访问方式。
 
-高级数值网格设置写作：
+---
 
-```python
-model_kwargs={
-    "solver_kwargs": {"Nx": 100, "Ny": 1000},
-}
-```
+## 文档
 
-正向计算时也可以这样写：
+- [教程 Notebook](examples/tutorial.ipynb)
+- [示例数据](examples/data)
+- [多波段测光设计](docs/multiband_photometry_design.md)
+- [模型参数参考](docs/model_parameter_reference.tex)
+- [物理回归与收敛测试](examples/physical_regression_and_convergence_tests.ipynb)
 
-```python
-bol = tf.lightcurve_bol(
-    model="nickel",
-    params=params_best,
-    solver_kwargs={"Nx": 100, "Ny": 1000},
-)
-```
+---
 
 ## 联系方式
 
 如有问题，可通过邮件联系：
 
-- Liangduan Liu ([liuld@ccnu.edu.cn])
-- Yuhao Zhang ([zhangyh2001@foxmail.com])
-- GuangLei Wu ([wuguanglei@mails.ccnu.edu.cn])
+- Liangduan Liu ([liuld@ccnu.edu.cn](mailto:liuld@ccnu.edu.cn))
+- Yuhao Zhang ([zhangyh2001@foxmail.com](mailto:zhangyh2001@foxmail.com))
+- GuangLei Wu ([wuguanglei@mails.ccnu.edu.cn](mailto:wuguanglei@mails.ccnu.edu.cn))
+
+---
 
 ## 引用
 
