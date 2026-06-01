@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import warnings
-from typing import Dict, List, Optional, Sequence, Literal, Any, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Literal, Any, Tuple
 
 import numpy as np
 
@@ -1122,6 +1122,100 @@ def _fit_likelihood_name(nuisance_cfgs: Dict[str, Dict[str, Any]]) -> str:
     return unique[0] if len(unique) == 1 else "gaussian_with_nuisance"
 
 
+@dataclass(frozen=True)
+class _MultibandPredictor:
+    model: str
+    z: Optional[float]
+    distance_modulus: Optional[float]
+    filters: Dict[str, FilterProfile]
+    band: np.ndarray
+    y_kind: str
+    mag_system: str
+    extinction_spec: Optional[ExtinctionSpec]
+    interp_fill_fit: str
+    model_kwargs_pred: Dict[str, Any]
+
+    def __call__(self, model_params: Dict[str, float], t_eval: np.ndarray) -> np.ndarray:
+        return predict_multiband(
+            model=self.model,
+            params=model_params,
+            z=self.z,
+            distance_modulus=self.distance_modulus,
+            filters=self.filters,
+            t_days=t_eval,
+            band=self.band,
+            y_kind=self.y_kind,
+            mag_system=self.mag_system,
+            extinction=self.extinction_spec,
+            interp_fill=self.interp_fill_fit,
+            **self.model_kwargs_pred,
+        )
+
+
+@dataclass(frozen=True)
+class _BolometricPredictor:
+    model: str
+    z: float
+    interp_fill_fit: str
+    model_kwargs_pred: Dict[str, Any]
+
+    def __call__(self, model_params: Dict[str, float], t_eval: np.ndarray) -> np.ndarray:
+        return predict_bol(
+            model=self.model,
+            params=model_params,
+            z=self.z,
+            t_days=t_eval,
+            interp_fill=self.interp_fill_fit,
+            **self.model_kwargs_pred,
+        )
+
+
+@dataclass(frozen=True)
+class _FitLnProb:
+    prior: MixedBoundsPrior
+    names_samp: List[str]
+    fixed: Dict[str, float]
+    names_all: List[str]
+    t_obs: np.ndarray
+    y_obs: np.ndarray
+    y_err: np.ndarray
+    predictor: Callable[[Dict[str, float], np.ndarray], np.ndarray]
+    likelihood_y_kind: str
+    nuisance_cfgs: Dict[str, Dict[str, Any]]
+
+    def __call__(self, sample_vec: np.ndarray) -> float:
+        lp = self.prior.lnprior(sample_vec)
+        if not np.isfinite(lp):
+            return -np.inf
+
+        vals = _param_values_from_sample(sample_vec, self.names_samp, self.fixed)
+        lp_phys = _physical_constraints_lnprior(vals)
+        if not np.isfinite(lp_phys):
+            return -np.inf
+
+        model_params, t_shift = _assemble_model_params_from_values(vals, self.names_all)
+        # Shift model time axis by t_shift and compare on observed t_obs.
+        # Legacy convention:
+        # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
+        t_eval = self.t_obs + t_shift
+
+        try:
+            y_mod = self.predictor(model_params, t_eval)
+        except _NonPhysicalModelOutput:
+            return -np.inf
+
+        if np.any(~np.isfinite(y_mod)):
+            return -np.inf
+
+        return lp + lp_phys + gaussian_lnlike_with_nuisance(
+            y_kind=self.likelihood_y_kind,
+            y_obs=self.y_obs,
+            y_model=y_mod,
+            y_err=self.y_err,
+            nuisance_params=_likelihood_nuisance_values(vals, self.nuisance_cfgs),
+        )
+
+
 def _run_sampler(
     *,
     sampler: str,
@@ -1407,51 +1501,35 @@ def fit_multiband(
         z=ctx.distance.get_z(),
     )
 
-    # ---- lnprob ----
-    def lnprob(sample_vec: np.ndarray) -> float:
-        lp = prior.lnprior(sample_vec)
-        if not np.isfinite(lp):
-            return -np.inf
-
-        vals = _param_values_from_sample(sample_vec, names_samp, fixed)
-        lp_phys = _physical_constraints_lnprior(vals)
-        if not np.isfinite(lp_phys):
-            return -np.inf
-
-        model_params, t_shift = _assemble_model_params_from_values(vals, names_all)
-        # Shift model time axis by t_shift and compare on observed t_obs.
-        # Legacy convention:
-        # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
-        t_eval = t_obs + t_shift
-
-        try:
-            y_mod = predict_multiband(
-                model=model,
-                params=model_params,
-                z=ctx.distance.z,
-                distance_modulus=None if ctx.distance.DL_cm is None else _distance_modulus_from_cm(float(ctx.distance.DL_cm)),
-                filters=filters,
-                t_days=t_eval,
-                band=band,
-                y_kind=ctx.y_kind,
-                mag_system=ctx.mag_system,
-                extinction=extinction_spec,
-                interp_fill=interp_fill_fit,
-                **model_kwargs_pred,
-            )
-        except _NonPhysicalModelOutput:
-            return -np.inf
-
-        if np.any(~np.isfinite(y_mod)):
-            return -np.inf
-
-        return lp + lp_phys + gaussian_lnlike_with_nuisance(
-            y_kind=ctx.y_kind,
-            y_obs=y_obs,
-            y_model=y_mod,
-            y_err=y_err,
-            nuisance_params=_likelihood_nuisance_values(vals, nuisance_cfgs),
-        )
+    distance_modulus_fit = (
+        None
+        if ctx.distance.DL_cm is None
+        else _distance_modulus_from_cm(float(ctx.distance.DL_cm))
+    )
+    predictor = _MultibandPredictor(
+        model=model,
+        z=ctx.distance.z,
+        distance_modulus=distance_modulus_fit,
+        filters=filters,
+        band=band,
+        y_kind=ctx.y_kind,
+        mag_system=ctx.mag_system,
+        extinction_spec=extinction_spec,
+        interp_fill_fit=interp_fill_fit,
+        model_kwargs_pred=model_kwargs_pred,
+    )
+    lnprob = _FitLnProb(
+        prior=prior,
+        names_samp=names_samp,
+        fixed=fixed,
+        names_all=names_all,
+        t_obs=t_obs,
+        y_obs=y_obs,
+        y_err=y_err,
+        predictor=predictor,
+        likelihood_y_kind=ctx.y_kind,
+        nuisance_cfgs=nuisance_cfgs,
+    )
 
     samples, logp, meta, sampler_used = _run_sampler(
         sampler=sampler,
@@ -1576,44 +1654,24 @@ def fit_bol(
     fixed = _add_fixed_likelihood_nuisance(fixed, nuisance_cfgs)
     prior = MixedBoundsPrior(bounds=bounds_samp, param_names=names_samp, log_flags=log_flags_samp)
 
-    def lnprob(sample_vec: np.ndarray) -> float:
-        lp = prior.lnprior(sample_vec)
-        if not np.isfinite(lp):
-            return -np.inf
-
-        vals = _param_values_from_sample(sample_vec, names_samp, fixed)
-        lp_phys = _physical_constraints_lnprior(vals)
-        if not np.isfinite(lp_phys):
-            return -np.inf
-
-        model_params, t_shift = _assemble_model_params_from_values(vals, names_all)
-        # Shift model time axis by t_shift and compare on observed t_obs.
-        # Legacy convention:
-        # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
-        t_eval = t_obs + t_shift
-
-        try:
-            y_mod = predict_bol(
-                model=model,
-                params=model_params,
-                z=ctx.distance.get_z(),
-                t_days=t_eval,
-                interp_fill=interp_fill_fit,
-                **model_kwargs_pred,
-            )
-        except _NonPhysicalModelOutput:
-            return -np.inf
-
-        if np.any(~np.isfinite(y_mod)):
-            return -np.inf
-
-        return lp + lp_phys + gaussian_lnlike_with_nuisance(
-            y_kind="flux",
-            y_obs=y_obs,
-            y_model=y_mod,
-            y_err=y_err,
-            nuisance_params=_likelihood_nuisance_values(vals, nuisance_cfgs),
-        )
+    predictor = _BolometricPredictor(
+        model=model,
+        z=ctx.distance.get_z(),
+        interp_fill_fit=interp_fill_fit,
+        model_kwargs_pred=model_kwargs_pred,
+    )
+    lnprob = _FitLnProb(
+        prior=prior,
+        names_samp=names_samp,
+        fixed=fixed,
+        names_all=names_all,
+        t_obs=t_obs,
+        y_obs=y_obs,
+        y_err=y_err,
+        predictor=predictor,
+        likelihood_y_kind="flux",
+        nuisance_cfgs=nuisance_cfgs,
+    )
 
     samples, logp, meta, sampler_used = _run_sampler(
         sampler=sampler,

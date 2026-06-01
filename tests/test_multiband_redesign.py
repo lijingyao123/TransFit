@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import pickle
 import warnings
 import numpy as np
 import pytest
@@ -56,6 +57,11 @@ LEGACY_PARAMS_NI = {
     "kappa_gamma": 0.03,
     "T_floor": 3000.0,
 }
+
+
+def _standard_normal_lnprob(x):
+    x = np.asarray(x, float)
+    return -0.5 * float(np.sum(x * x))
 
 
 def test_public_nickel_and_magnetar_use_canonical_full_parameter_sets():
@@ -335,6 +341,26 @@ def test_mixed_bounds_prior_normalizes_list_bounds_and_log_flags():
     assert np.all((samples[:, 1] > 1.0) & (samples[:, 1] < 10.0))
 
 
+def test_dynesty_parallel_helpers_are_pickleable():
+    from transfit.samplers.dynesty import _DynestyLogLike, _build_prior_transform
+
+    prior = MixedBoundsPrior(
+        bounds=np.array([[0.1, 1.0], [1.0, 2.0]], float),
+        param_names=["x", "y"],
+        log_flags=[True, False],
+    )
+
+    prior_transform = pickle.loads(
+        pickle.dumps(_build_prior_transform(prior.bounds, prior.log_flags))
+    )
+    loglike = pickle.loads(
+        pickle.dumps(_DynestyLogLike(lnprob=_standard_normal_lnprob, prior=prior))
+    )
+
+    assert prior_transform(np.array([0.0, 0.5], float)).tolist() == pytest.approx([0.1, 1.5])
+    assert np.isfinite(loglike(np.array([0.5, 1.5], float)))
+
+
 def test_mcmc_backends_treat_nsteps_as_production_length():
     pytest.importorskip("emcee")
     pytest.importorskip("zeus")
@@ -607,6 +633,7 @@ def test_fit_multiband_can_sample_sigma_int_as_likelihood_parameter(monkeypatch)
         assert prior.bounds[0, 0] == pytest.approx(0.01)
         assert prior.bounds[0, 1] == pytest.approx(1.0)
         sample = np.array([0.2], float)
+        lnprob = pickle.loads(pickle.dumps(lnprob))
         logp = lnprob(sample)
         assert np.isfinite(logp)
         return sample.reshape(1, -1), np.array([logp], float), {}, "fake"
@@ -647,6 +674,7 @@ def test_fit_bol_can_sample_sigma_int_as_likelihood_parameter(monkeypatch):
         assert list(prior.param_names) == ["sigma_int"]
         assert prior.log_flags.tolist() == [True]
         sample = np.array([0.3], float)
+        lnprob = pickle.loads(pickle.dumps(lnprob))
         logp = lnprob(sample)
         assert np.isfinite(logp)
         return sample.reshape(1, -1), np.array([logp], float), {}, "fake"
