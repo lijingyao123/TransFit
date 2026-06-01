@@ -1,29 +1,65 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Callable, Optional, Tuple, Dict, Any
 import multiprocessing as mp
 import numpy as np
 
 
+@dataclass(frozen=True)
+class _DynestyPriorTransform:
+    lo: np.ndarray
+    span_lin: np.ndarray
+    span_log: np.ndarray
+    log_flags: np.ndarray
+
+    def __call__(self, unit_cube: np.ndarray) -> np.ndarray:
+        u = np.asarray(unit_cube, float)
+        x = self.lo + self.span_lin * u
+        if np.any(self.log_flags):
+            x = np.asarray(x, float)
+            x[self.log_flags] = np.exp(
+                np.log(self.lo[self.log_flags])
+                + self.span_log[self.log_flags] * u[self.log_flags]
+            )
+        return x
+
+
+@dataclass(frozen=True)
+class _DynestyLogLike:
+    lnprob: Callable[[np.ndarray], float]
+    prior: Any
+
+    def __call__(self, theta: np.ndarray) -> float:
+        x = np.asarray(theta, float)
+        lp = float(self.prior.lnprior(x))
+        if not np.isfinite(lp):
+            return -np.inf
+        try:
+            post = float(self.lnprob(x))
+        except Exception:
+            return -np.inf
+        if not np.isfinite(post):
+            return -np.inf
+        return float(post - lp)
+
+
 def _build_prior_transform(bounds: np.ndarray, log_flags=None):
-    lo = bounds[:, 0]
-    hi = bounds[:, 1]
+    lo = np.asarray(bounds[:, 0], float).copy()
+    hi = np.asarray(bounds[:, 1], float).copy()
     lf = np.asarray(log_flags, bool) if log_flags is not None else np.zeros(lo.size, dtype=bool)
     if lf.size != lo.size:
         raise ValueError("log_flags size must match bounds ndim for dynesty.")
+    lf = lf.copy()
 
     span_lin = hi - lo
     span_log = np.log(hi) - np.log(lo)
-
-    def prior_transform(unit_cube: np.ndarray) -> np.ndarray:
-        u = np.asarray(unit_cube, float)
-        x = lo + span_lin * u
-        if np.any(lf):
-            x = np.asarray(x, float)
-            x[lf] = np.exp(np.log(lo[lf]) + span_log[lf] * u[lf])
-        return x
-
-    return prior_transform
+    return _DynestyPriorTransform(
+        lo=lo,
+        span_lin=np.asarray(span_lin, float),
+        span_log=np.asarray(span_log, float),
+        log_flags=lf,
+    )
 
 
 def run_dynesty(
@@ -81,18 +117,7 @@ def run_dynesty(
             raise ValueError("prior.log_flags size does not match prior bounds ndim.")
     prior_transform = _build_prior_transform(bounds, log_flags=log_flags)
 
-    def loglike(theta: np.ndarray) -> float:
-        x = np.asarray(theta, float)
-        lp = float(prior.lnprior(x))
-        if not np.isfinite(lp):
-            return -np.inf
-        try:
-            post = float(lnprob(x))
-        except Exception:
-            return -np.inf
-        if not np.isfinite(post):
-            return -np.inf
-        return float(post - lp)
+    loglike = _DynestyLogLike(lnprob=lnprob, prior=prior)
 
     created_pool = None
     used_backend = "none"
