@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import Iterable, Optional
 
 from ..filters import FilterProfile
+from ..labels import normalize_band_label
 from .core import BandExtinction, DustComponent, ExtinctionSpec
 from .resolve import resolve_extinction_values_mag
 
@@ -18,13 +19,6 @@ _COMPONENT_KEYS = _EBV_KEYS | _AV_KEYS | _RV_KEYS | _LAW_KEYS | _FRAME_KEYS | _N
 _BAND_MAP_KEYS = {"band_map", "values_mag"}
 
 
-def _norm_band(label: object) -> str:
-    out = str(label).strip()
-    if not out:
-        raise ValueError("Band labels must be non-empty strings.")
-    return out
-
-
 def _norm_key(key: object) -> str:
     return str(key).strip().lower()
 
@@ -32,7 +26,7 @@ def _norm_key(key: object) -> str:
 def _band_map_from_mapping(payload: Mapping[str, object]) -> BandExtinction:
     return BandExtinction(
         values_mag={
-            _norm_band(k): float(v)
+            normalize_band_label(k): float(v)
             for k, v in dict(payload).items()
         },
         frame="observer",
@@ -143,7 +137,7 @@ def normalize_extinction(
             )
 
     if used_bands is not None:
-        needed = [_norm_band(b) for b in used_bands]
+        needed = [normalize_band_label(b) for b in used_bands]
         missing_from_map = []
         if spec.band_map is not None:
             missing_from_map = [b for b in needed if b not in spec.band_map.values_mag]

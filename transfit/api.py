@@ -11,6 +11,7 @@ from .data import BolometricData, MultiBandData
 from .modules.extinction import ExtinctionSpec, normalize_extinction, validate_extinction_spec
 from .modules.filters import FilterProfile, normalize_filters, validate_filter_map
 from .modules.interp import interp_fit
+from .modules.labels import normalize_band_label
 from .modules.likelihood import gaussian_lnlike_flux, gaussian_lnlike_for_observation
 from .modules.photometry import evaluate_multiband_observer_output
 from .modules.sed import BlackbodySED
@@ -222,14 +223,6 @@ class MultiBandLC:
 # -------------------------
 # Small utilities
 # -------------------------
-
-def _norm_band(x: Any) -> str:
-    """
-    IMPORTANT: Keep case. Only strip whitespace.
-    This makes band matching case-sensitive (as requested).
-    """
-    return str(x).strip()
-
 
 def _as_1d_float(x, name: str) -> np.ndarray:
     arr = np.asarray(x, float).reshape(-1)
@@ -588,7 +581,7 @@ def lightcurve_multiband(
         require_distance=True,
     )
     sed = sed or BlackbodySED()
-    bands = [_norm_band(b) for b in list(bands)]
+    bands = [normalize_band_label(b) for b in list(bands)]
     filter_map = validate_filter_map(
         ctx.filters or {},
         used_bands=bands,
@@ -666,7 +659,7 @@ def predict_multiband(
     t_days = np.asarray(t_days, float).reshape(-1)
 
     # Keep band case; only strip whitespace.
-    band = np.asarray([_norm_band(b) for b in np.asarray(band).reshape(-1)], dtype=object)
+    band = np.asarray([normalize_band_label(b) for b in np.asarray(band).reshape(-1)], dtype=object)
     _check_same_length(t_days=t_days, band=band)
 
     uniq = sorted(set(band.tolist()))
@@ -1176,7 +1169,7 @@ def fit_multiband(
     y_err = _as_1d_float(data.yerr, "data.yerr")
 
     # Keep band case; only strip whitespace.
-    band = np.asarray([_norm_band(b) for b in np.asarray(data.band).reshape(-1)], dtype=object)
+    band = np.asarray([normalize_band_label(b) for b in np.asarray(data.band).reshape(-1)], dtype=object)
 
     _check_same_length(t_days=t_obs, band=band, y=y_obs, yerr=y_err)
 

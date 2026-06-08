@@ -7,15 +7,9 @@ import numpy as np
 
 from transfit.constants import C_LIGHT
 
+from ..labels import normalize_band_label
 from .core import FilterProfile
 from .registry import get_builtin_filter
-
-
-def _norm_band(label: object) -> str:
-    out = str(label).strip()
-    if not out:
-        raise ValueError("Band labels must be non-empty strings.")
-    return out
 
 
 def _coerce_zero_points(spec: Mapping[str, object]) -> Dict[str, float]:
@@ -111,7 +105,7 @@ def _normalize_one(label: str, spec: object) -> FilterProfile:
 
 
 def _require_used_bands(filters: Mapping[str, FilterProfile], used_bands: Iterable[str]) -> None:
-    needed = [_norm_band(b) for b in used_bands]
+    needed = [normalize_band_label(b) for b in used_bands]
     missing = [b for b in needed if b not in filters]
     if missing:
         raise KeyError(
@@ -127,7 +121,7 @@ def _require_mag_system(filters: Mapping[str, FilterProfile], used_bands: Iterab
     if system != "vega":
         return
     missing = [
-        b for b in [_norm_band(x) for x in used_bands]
+        b for b in [normalize_band_label(x) for x in used_bands]
         if "vega" not in filters[b].zero_points_jy
     ]
     if missing:
@@ -148,10 +142,10 @@ def normalize_filters(
 
     out: Dict[str, FilterProfile] = {}
     for raw_label, spec in filters.items():
-        label = _norm_band(raw_label)
+        label = normalize_band_label(raw_label)
         out[label] = _normalize_one(label, spec)
 
-    bands_for_check = list(out.keys()) if used_bands is None else [_norm_band(b) for b in used_bands]
+    bands_for_check = list(out.keys()) if used_bands is None else [normalize_band_label(b) for b in used_bands]
     _require_used_bands(out, bands_for_check)
     _require_mag_system(out, bands_for_check, mag_system)
     return out

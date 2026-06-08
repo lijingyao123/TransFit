@@ -5,15 +5,9 @@ from typing import Dict, Iterable, Mapping
 import numpy as np
 
 from ..filters import FilterProfile, mono_effective_wavelength_A
+from ..labels import normalize_band_label
 from .core import ExtinctionSpec
 from .laws import component_extinction_mag
-
-
-def _norm_band(label: object) -> str:
-    out = str(label).strip()
-    if not out:
-        raise ValueError("Band labels must be non-empty strings.")
-    return out
 
 
 def resolve_extinction_values_mag(
@@ -23,7 +17,7 @@ def resolve_extinction_values_mag(
     used_bands: Iterable[str],
     z: float = 0.0,
 ) -> Dict[str, float]:
-    bands = [_norm_band(b) for b in used_bands]
+    bands = [normalize_band_label(b) for b in used_bands]
     out = {band: 0.0 for band in bands}
     if extinction is None:
         return out

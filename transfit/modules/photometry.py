@@ -6,10 +6,7 @@ import numpy as np
 
 from .extinction import ExtinctionSpec, apply_extinction_to_fnu_grid
 from .filters import FilterProfile
-from .fnu import (
-    evaluate_mono_filter_fnu_grid,
-    evaluate_multiband_model_fnu as _evaluate_multiband_model_fnu,
-)
+from .fnu import evaluate_multiband_model_fnu
 from .magnitudes import (
     fnu_grid_to_abmag_grid,
     fnu_grid_to_vega_mag_grid,
@@ -24,30 +21,6 @@ def validate_observation_mode(y_kind: str, mag_system: str) -> tuple[str, str]:
     if mag_system_n not in ("ab", "vega"):
         raise ValueError("mag_system must be 'ab' or 'vega'.")
     return y_kind_n, mag_system_n
-
-
-def evaluate_multiband_model_fnu(
-    *,
-    sed,
-    filter_map: Dict[str, FilterProfile],
-    bands: Sequence[str],
-    Teff_K: np.ndarray,
-    R_cm: np.ndarray,
-    DL_cm: float,
-    z: float,
-) -> np.ndarray:
-    """
-    Canonical internal multi-band model quantity: observer-frame F_nu.
-    """
-    return _evaluate_multiband_model_fnu(
-        sed=sed,
-        filter_map=filter_map,
-        bands=bands,
-        Teff_K=Teff_K,
-        R_cm=R_cm,
-        DL_cm=DL_cm,
-        z=z,
-    )
 
 
 def evaluate_multiband_extinguished_fnu(
@@ -133,9 +106,3 @@ def evaluate_multiband_observer_output(
         y_kind=y_kind,
         mag_system=mag_system,
     )
-
-
-# Backward-compatible aliases for the previous internal naming.
-apply_extinction_to_flux_grid = apply_extinction_to_fnu_grid
-evaluate_mono_filter_flux_grid = evaluate_mono_filter_fnu_grid
-flux_grid_to_output = fnu_grid_to_observation_output
