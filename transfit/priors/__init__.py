@@ -33,4 +33,8 @@ def build_bounds(
     return names, np.asarray(bounds, float)
 
 
-__all__ = ["UniformBoundsPrior", "MixedBoundsPrior", "build_bounds"]
+__all__ = [
+    "UniformBoundsPrior",
+    "MixedBoundsPrior",
+    "build_bounds",
+]

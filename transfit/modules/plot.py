@@ -88,6 +88,7 @@ _PARAM_LABELS_LATEX = {
     "P_ms": r"$P_{0}\,[\mathrm{ms}]$",
     "B14": r"$B\,[10^{14}\,\mathrm{G}]$",
     "t_shift": r"$t_{\mathrm{shift}}\,[\mathrm{day}]$",
+    "sigma_int": r"$\sigma_{\mathrm{int}}\,[\mathrm{mag}]$",
 }
 
 

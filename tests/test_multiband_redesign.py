@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import pickle
 import warnings
 import numpy as np
 import pytest
@@ -23,6 +24,7 @@ from transfit.modules.likelihood import (
     gaussian_lnlike_flux,
     gaussian_lnlike_for_observation,
     gaussian_lnlike_mag,
+    gaussian_lnlike_with_nuisance,
 )
 from transfit.modules.magnitudes import fnu_grid_to_vega_mag_grid
 from transfit.modules.photometry import evaluate_multiband_observer_output
@@ -55,6 +57,11 @@ LEGACY_PARAMS_NI = {
     "kappa_gamma": 0.03,
     "T_floor": 3000.0,
 }
+
+
+def _standard_normal_lnprob(x):
+    x = np.asarray(x, float)
+    return -0.5 * float(np.sum(x * x))
 
 
 def test_public_nickel_and_magnetar_use_canonical_full_parameter_sets():
@@ -334,6 +341,26 @@ def test_mixed_bounds_prior_normalizes_list_bounds_and_log_flags():
     assert np.all((samples[:, 1] > 1.0) & (samples[:, 1] < 10.0))
 
 
+def test_dynesty_parallel_helpers_are_pickleable():
+    from transfit.samplers.dynesty import _DynestyLogLike, _build_prior_transform
+
+    prior = MixedBoundsPrior(
+        bounds=np.array([[0.1, 1.0], [1.0, 2.0]], float),
+        param_names=["x", "y"],
+        log_flags=[True, False],
+    )
+
+    prior_transform = pickle.loads(
+        pickle.dumps(_build_prior_transform(prior.bounds, prior.log_flags))
+    )
+    loglike = pickle.loads(
+        pickle.dumps(_DynestyLogLike(lnprob=_standard_normal_lnprob, prior=prior))
+    )
+
+    assert prior_transform(np.array([0.0, 0.5], float)).tolist() == pytest.approx([0.1, 1.5])
+    assert np.isfinite(loglike(np.array([0.5, 1.5], float)))
+
+
 def test_mcmc_backends_treat_nsteps_as_production_length():
     pytest.importorskip("emcee")
     pytest.importorskip("zeus")
@@ -541,6 +568,181 @@ def test_observation_likelihood_dispatch_is_explicit():
         y_model=y_model,
         y_err=y_err,
     ) == pytest.approx(gaussian_lnlike_mag(y_obs, y_model, y_err))
+
+
+def test_sigma_int_likelihood_preserves_legacy_behavior_when_disabled():
+    y_obs = np.array([1.0, 2.0, 3.0], float)
+    y_model = np.array([1.1, 1.9, 3.2], float)
+    y_err = np.array([0.1, 0.2, 0.2], float)
+
+    assert gaussian_lnlike_with_nuisance(
+        y_kind="flux",
+        y_obs=y_obs,
+        y_model=y_model,
+        y_err=y_err,
+        nuisance_params=None,
+    ) == pytest.approx(
+        gaussian_lnlike_for_observation(
+            y_kind="flux",
+            y_obs=y_obs,
+            y_model=y_model,
+            y_err=y_err,
+        )
+    )
+
+
+def test_sigma_int_likelihood_uses_mag_scatter_and_normalization():
+    y_obs = np.array([20.0, 20.2, 20.4], float)
+    y_model = np.array([20.1, 20.3, 20.1], float)
+    y_err = np.array([0.05, 0.06, 0.07], float)
+    sigma_int = 0.2
+
+    var_mag = y_err * y_err + sigma_int * sigma_int
+    expected_mag = -0.5 * np.sum(
+        ((y_obs - y_model) ** 2) / var_mag + np.log(2.0 * np.pi * var_mag)
+    )
+    assert gaussian_lnlike_with_nuisance(
+        y_kind="mag",
+        y_obs=y_obs,
+        y_model=y_model,
+        y_err=y_err,
+        nuisance_params={"sigma_int": sigma_int},
+    ) == pytest.approx(expected_mag)
+
+    flux_obs = np.array([1.0e-27, 2.0e-27, 3.0e-27], float)
+    flux_model = np.array([1.1e-27, 1.9e-27, 3.2e-27], float)
+    flux_err = np.array([0.1e-27, 0.2e-27, 0.3e-27], float)
+    frac = 0.4 * np.log(10.0) * sigma_int
+    var_flux = flux_err * flux_err + (frac * np.abs(flux_obs)) ** 2
+    expected_flux = -0.5 * np.sum(
+        ((flux_obs - flux_model) ** 2) / var_flux + np.log(2.0 * np.pi * var_flux)
+    )
+    assert gaussian_lnlike_with_nuisance(
+        y_kind="flux",
+        y_obs=flux_obs,
+        y_model=flux_model,
+        y_err=flux_err,
+        nuisance_params={"sigma_int": sigma_int},
+    ) == pytest.approx(expected_flux)
+
+
+def test_fit_multiband_can_sample_sigma_int_as_likelihood_parameter(monkeypatch):
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        assert list(prior.param_names) == ["sigma_int"]
+        assert prior.log_flags.tolist() == [True]
+        assert prior.bounds[0, 0] == pytest.approx(0.01)
+        assert prior.bounds[0, 1] == pytest.approx(1.0)
+        sample = np.array([0.2], float)
+        lnprob = pickle.loads(pickle.dumps(lnprob))
+        logp = lnprob(sample)
+        assert np.isfinite(logp)
+        return sample.reshape(1, -1), np.array([logp], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    data = tf.MultiBandData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        band=np.array(["B", "B", "B"], dtype=object),
+        y=np.array([20.0, 20.2, 20.5], float),
+        yerr=np.array([0.05, 0.05, 0.05], float),
+    )
+    fixed = dict(PARAMS_NI)
+    fixed["t_shift"] = 0.0
+
+    res = tf.fit_multiband(
+        data=data,
+        model="nickel",
+        z=0.001728,
+        distance_modulus=MU_7P5_MPC,
+        filters={"B": "johnson_cousins.B"},
+        y_kind="mag",
+        priors={"sigma_int": ["log10", -2.0, 0.0]},
+        fixed=fixed,
+        model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 8.0},
+    )
+
+    assert res.param_names == ["sigma_int"]
+    assert "sigma_int" not in res.all_param_names
+    assert res.best_params_raw["sigma_int"] == pytest.approx(0.2)
+    assert res.meta["log_prior_names"] == ["sigma_int"]
+    assert res.meta["nuisance_priors"]["sigma_int"]["sampled"] is True
+    assert res.meta["likelihood"] == "gaussian_with_sigma_int_mag"
+
+
+def test_fit_bol_can_sample_sigma_int_as_likelihood_parameter(monkeypatch):
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        assert list(prior.param_names) == ["sigma_int"]
+        assert prior.log_flags.tolist() == [True]
+        sample = np.array([0.3], float)
+        lnprob = pickle.loads(pickle.dumps(lnprob))
+        logp = lnprob(sample)
+        assert np.isfinite(logp)
+        return sample.reshape(1, -1), np.array([logp], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    data = tf.BolometricData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        y=np.array([1.0e41, 1.1e41, 1.2e41], float),
+        yerr=np.array([1.0e40, 1.0e40, 1.0e40], float),
+    )
+    fixed = dict(PARAMS_NI)
+    fixed.pop("T_floor")
+    fixed["t_shift"] = 0.0
+
+    res = tf.fit_bol(
+        data=data,
+        model="nickel",
+        priors={"sigma_int": ["log10", -2.0, 0.30103]},
+        fixed=fixed,
+        model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 8.0},
+    )
+
+    assert res.param_names == ["sigma_int"]
+    assert "sigma_int" not in res.all_param_names
+    assert res.best_params_raw["sigma_int"] == pytest.approx(0.3)
+    assert res.meta["log_prior_names"] == ["sigma_int"]
+
+
+def test_sigma_int_prior_accepts_mapping_form_without_becoming_model_param():
+    priors_model, fixed_model, cfgs = api._split_likelihood_nuisance_fit_inputs(
+        priors={
+            "M_ej": (1.0, 5.0),
+            "sigma_int": {"bounds": [-2.0, 0.30103], "scale": "log10"},
+        },
+        fixed={"sigma_int": 0.2},
+    )
+    cfg = cfgs["sigma_int"]
+
+    assert priors_model == {"M_ej": (1.0, 5.0)}
+    assert fixed_model == {}
+    assert cfg["enabled"] is True
+    assert cfg["sampled"] is False
+    assert cfg["fixed"] is True
+    assert cfg["value"] == pytest.approx(0.2)
+    assert cfg["log_flag"] is True
+    assert cfg["bounds"][0] == pytest.approx(0.01)
+    assert cfg["bounds"][1] == pytest.approx(2.0, rel=1.0e-5)
+
+
+def test_fit_rejects_misspelled_sigma_int_prior():
+    data = tf.BolometricData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        y=np.array([1.0e41, 1.1e41, 1.2e41], float),
+        yerr=np.array([1.0e40, 1.0e40, 1.0e40], float),
+    )
+    fixed = dict(PARAMS_NI)
+    fixed.pop("T_floor")
+    fixed["t_shift"] = 0.0
+
+    with pytest.raises(KeyError, match="simga_int"):
+        tf.fit_bol(
+            data=data,
+            model="nickel",
+            priors={"simga_int": ["log10", -2.0, 0.0]},
+            fixed=fixed,
+            model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 8.0},
+        )
 
 
 def test_structured_extinction_component_resolves_standard_av():

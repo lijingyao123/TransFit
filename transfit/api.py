@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import warnings
-from typing import Dict, List, Optional, Sequence, Literal, Any, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Literal, Any, Tuple
 
 import numpy as np
 
@@ -12,12 +12,13 @@ from .modules.extinction import ExtinctionSpec, normalize_extinction, validate_e
 from .modules.filters import FilterProfile, normalize_filters, validate_filter_map
 from .modules.interp import interp_fit
 from .modules.labels import normalize_band_label
-from .modules.likelihood import gaussian_lnlike_flux, gaussian_lnlike_for_observation
+from .modules.likelihood import gaussian_lnlike_with_nuisance
 from .modules.photometry import evaluate_multiband_observer_output
 from .modules.sed import BlackbodySED
 from .model_registry import canonical_model_name, forward_param_defaults
 from .samplers import FitResult, run_emcee, run_zeus, run_dynesty
 from .priors import MixedBoundsPrior, build_bounds
+from .priors.nuisance import LIKELIHOOD_NUISANCE_PARAM_SPECS
 from transfit.constants import DAY, MPC, PC
 
 
@@ -935,6 +936,279 @@ def _split_prior_specs(
     return pri_lin, pri_log10
 
 
+def _log10_bounds_to_linear(name: str, bounds_log10: Tuple[float, float]) -> Tuple[float, float]:
+    lo_log10 = float(bounds_log10[0])
+    hi_log10 = float(bounds_log10[1])
+    lo = 10.0 ** lo_log10
+    hi = 10.0 ** hi_log10
+    if not (np.isfinite(lo) and np.isfinite(hi) and lo > 0.0 and hi > 0.0):
+        raise ValueError(
+            f"log10 bounds for '{name}' lead to invalid linear bounds: ({lo}, {hi})"
+        )
+    return float(lo), float(hi)
+
+
+def _validate_likelihood_nuisance_value(
+    value: float,
+    spec: Dict[str, Any],
+    *,
+    label: str,
+) -> float:
+    out = float(value)
+    minimum = spec.get("minimum")
+    if not np.isfinite(out):
+        raise ValueError(f"{label} must be finite.")
+    if minimum is not None and out < float(minimum):
+        raise ValueError(f"{label} must be >= {float(minimum):g}.")
+    return out
+
+
+def _validate_likelihood_nuisance_bounds(
+    name: str,
+    bounds: Tuple[float, float],
+    spec: Dict[str, Any],
+) -> Tuple[float, float]:
+    lo = float(bounds[0])
+    hi = float(bounds[1])
+    if not (np.isfinite(lo) and np.isfinite(hi) and lo < hi):
+        raise ValueError(f"Prior bounds for '{name}' must satisfy finite lo < hi.")
+    minimum = spec.get("minimum")
+    if minimum is not None and lo < float(minimum):
+        raise ValueError(f"Prior bounds for '{name}' must satisfy lo >= {float(minimum):g}.")
+    return lo, hi
+
+
+def _split_likelihood_nuisance_fit_inputs(
+    priors: Optional[Dict[str, Any]],
+    fixed: Optional[Dict[str, float]],
+):
+    """
+    Separate likelihood-only nuisance parameters from model parameters.
+
+    Nuisance parameters are sampled/fixed through the fit API but are never
+    part of the forward-model parameter vector.
+    """
+    priors_model = dict(priors or {})
+    fixed_model = dict(fixed or {})
+    nuisance_cfgs: Dict[str, Dict[str, Any]] = {}
+
+    for name, spec in LIKELIHOOD_NUISANCE_PARAM_SPECS.items():
+        prior_spec = priors_model.pop(name, None)
+        fixed_present = name in fixed_model
+        fixed_value = None
+        if fixed_present:
+            fixed_value = _validate_likelihood_nuisance_value(
+                fixed_model.pop(name),
+                spec,
+                label=f"fixed['{name}']",
+            )
+
+        cfg: Dict[str, Any] = dict(
+            enabled=prior_spec is not None or fixed_present,
+            sampled=False,
+            fixed=fixed_present,
+            value=fixed_value,
+            bounds=None,
+            log_flag=False,
+            units=spec.get("units"),
+            likelihood=spec.get("likelihood", "gaussian"),
+        )
+
+        if prior_spec is not None:
+            nuisance_lin, nuisance_log10 = _split_prior_specs({name: prior_spec})
+            if name in nuisance_log10:
+                bounds = _log10_bounds_to_linear(name, nuisance_log10[name])
+                cfg["log_flag"] = True
+            else:
+                bounds = nuisance_lin[name]
+
+            bounds = _validate_likelihood_nuisance_bounds(name, bounds, spec)
+            cfg["bounds"] = bounds
+
+            if fixed_present:
+                lo, hi = bounds
+                if not (lo <= float(fixed_value) <= hi):
+                    raise ValueError(
+                        f"fixed['{name}']={fixed_value} out of bounds ({lo}, {hi})"
+                    )
+            else:
+                cfg["sampled"] = True
+
+        nuisance_cfgs[name] = cfg
+
+    return priors_model, fixed_model, nuisance_cfgs
+
+
+def _add_fixed_likelihood_nuisance(
+    fixed: Dict[str, float],
+    nuisance_cfgs: Dict[str, Dict[str, Any]],
+) -> Dict[str, float]:
+    out = dict(fixed or {})
+    for name, cfg in nuisance_cfgs.items():
+        if bool(cfg.get("fixed", False)):
+            out[name] = float(cfg["value"])
+    return out
+
+
+def _likelihood_nuisance_meta(
+    nuisance_cfgs: Dict[str, Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    return {
+        name: dict(
+            enabled=bool(cfg["enabled"]),
+            sampled=bool(cfg["sampled"]),
+            fixed=bool(cfg["fixed"]),
+            value=cfg["value"],
+            bounds=cfg["bounds"],
+            scale="log10" if cfg["log_flag"] else "linear",
+            units=cfg.get("units"),
+        )
+        for name, cfg in nuisance_cfgs.items()
+    }
+
+
+def _append_likelihood_nuisance_sampling(
+    names_samp: List[str],
+    bounds_samp: np.ndarray,
+    log_flags_samp: List[bool],
+    nuisance_cfgs: Dict[str, Dict[str, Any]],
+):
+    out_names = list(names_samp)
+    out_log_flags = list(log_flags_samp)
+
+    bounds_arr = np.asarray(bounds_samp, float)
+    if bounds_arr.size == 0:
+        bounds_arr = np.empty((0, 2), dtype=float)
+
+    for name, cfg in nuisance_cfgs.items():
+        if not bool(cfg.get("sampled", False)):
+            continue
+        bounds_arr = np.vstack(
+            [bounds_arr, np.asarray(cfg["bounds"], float).reshape(1, 2)]
+        )
+        out_names.append(name)
+        out_log_flags.append(bool(cfg.get("log_flag", False)))
+
+    return out_names, bounds_arr, out_log_flags
+
+
+def _likelihood_nuisance_values(
+    vals: Dict[str, float],
+    nuisance_cfgs: Dict[str, Dict[str, Any]],
+) -> Dict[str, float]:
+    return {
+        name: float(vals[name])
+        for name, cfg in nuisance_cfgs.items()
+        if bool(cfg.get("enabled", False)) and name in vals
+    }
+
+
+def _fit_likelihood_name(nuisance_cfgs: Dict[str, Dict[str, Any]]) -> str:
+    active = [
+        str(cfg.get("likelihood", "gaussian"))
+        for cfg in nuisance_cfgs.values()
+        if bool(cfg.get("enabled", False))
+    ]
+    if not active:
+        return "gaussian"
+    unique = sorted(set(active))
+    return unique[0] if len(unique) == 1 else "gaussian_with_nuisance"
+
+
+@dataclass(frozen=True)
+class _MultibandPredictor:
+    model: str
+    z: Optional[float]
+    distance_modulus: Optional[float]
+    filters: Dict[str, FilterProfile]
+    band: np.ndarray
+    y_kind: str
+    mag_system: str
+    extinction_spec: Optional[ExtinctionSpec]
+    interp_fill_fit: str
+    model_kwargs_pred: Dict[str, Any]
+
+    def __call__(self, model_params: Dict[str, float], t_eval: np.ndarray) -> np.ndarray:
+        return predict_multiband(
+            model=self.model,
+            params=model_params,
+            z=self.z,
+            distance_modulus=self.distance_modulus,
+            filters=self.filters,
+            t_days=t_eval,
+            band=self.band,
+            y_kind=self.y_kind,
+            mag_system=self.mag_system,
+            extinction=self.extinction_spec,
+            interp_fill=self.interp_fill_fit,
+            **self.model_kwargs_pred,
+        )
+
+
+@dataclass(frozen=True)
+class _BolometricPredictor:
+    model: str
+    z: float
+    interp_fill_fit: str
+    model_kwargs_pred: Dict[str, Any]
+
+    def __call__(self, model_params: Dict[str, float], t_eval: np.ndarray) -> np.ndarray:
+        return predict_bol(
+            model=self.model,
+            params=model_params,
+            z=self.z,
+            t_days=t_eval,
+            interp_fill=self.interp_fill_fit,
+            **self.model_kwargs_pred,
+        )
+
+
+@dataclass(frozen=True)
+class _FitLnProb:
+    prior: MixedBoundsPrior
+    names_samp: List[str]
+    fixed: Dict[str, float]
+    names_all: List[str]
+    t_obs: np.ndarray
+    y_obs: np.ndarray
+    y_err: np.ndarray
+    predictor: Callable[[Dict[str, float], np.ndarray], np.ndarray]
+    likelihood_y_kind: str
+    nuisance_cfgs: Dict[str, Dict[str, Any]]
+
+    def __call__(self, sample_vec: np.ndarray) -> float:
+        lp = self.prior.lnprior(sample_vec)
+        if not np.isfinite(lp):
+            return -np.inf
+
+        vals = _param_values_from_sample(sample_vec, self.names_samp, self.fixed)
+        lp_phys = _physical_constraints_lnprior(vals)
+        if not np.isfinite(lp_phys):
+            return -np.inf
+
+        model_params, t_shift = _assemble_model_params_from_values(vals, self.names_all)
+        # Shift model time axis by t_shift and compare on observed t_obs.
+        # Legacy convention:
+        # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
+        t_eval = self.t_obs + t_shift
+
+        try:
+            y_mod = self.predictor(model_params, t_eval)
+        except _NonPhysicalModelOutput:
+            return -np.inf
+
+        if np.any(~np.isfinite(y_mod)):
+            return -np.inf
+
+        return lp + lp_phys + gaussian_lnlike_with_nuisance(
+            y_kind=self.likelihood_y_kind,
+            y_obs=self.y_obs,
+            y_model=y_mod,
+            y_err=self.y_err,
+            nuisance_params=_likelihood_nuisance_values(vals, self.nuisance_cfgs),
+        )
+
+
 def _run_sampler(
     *,
     sampler: str,
@@ -1177,11 +1451,15 @@ def fit_multiband(
         raise ValueError("data.y and data.yerr must be finite and yerr > 0.")
 
     # ---- bounds/prior ----
-    priors_lin, priors_log10 = _split_prior_specs(priors)
+    priors_model, fixed_model, nuisance_cfgs = _split_likelihood_nuisance_fit_inputs(
+        priors,
+        fixed,
+    )
+    priors_lin, priors_log10 = _split_prior_specs(priors_model)
     names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=True)
     bounds_all, log_set_all = _apply_log10_priors(names_all, bounds_all, priors_log10)
     _validate_sampling_bounds_physical_constraints(names_all, bounds_all)
-    names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
+    names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed_model)
     _validate_fixed_physical_constraints(fixed)
     model_kwargs_pred, tmax_meta = _resolve_fit_t_max_days(
         model_kwargs_pred,
@@ -1191,6 +1469,13 @@ def fit_multiband(
         fixed=fixed,
     )
     log_flags_samp = [n in log_set_all for n in names_samp]
+    names_samp, bounds_samp, log_flags_samp = _append_likelihood_nuisance_sampling(
+        names_samp,
+        bounds_samp,
+        log_flags_samp,
+        nuisance_cfgs,
+    )
+    fixed = _add_fixed_likelihood_nuisance(fixed, nuisance_cfgs)
     prior = MixedBoundsPrior(bounds=bounds_samp, param_names=names_samp, log_flags=log_flags_samp)
 
     # ---- band check (case-sensitive) ----
@@ -1209,50 +1494,35 @@ def fit_multiband(
         z=ctx.distance.get_z(),
     )
 
-    # ---- lnprob ----
-    def lnprob(sample_vec: np.ndarray) -> float:
-        lp = prior.lnprior(sample_vec)
-        if not np.isfinite(lp):
-            return -np.inf
-
-        vals = _param_values_from_sample(sample_vec, names_samp, fixed)
-        lp_phys = _physical_constraints_lnprior(vals)
-        if not np.isfinite(lp_phys):
-            return -np.inf
-
-        model_params, t_shift = _assemble_model_params_from_values(vals, names_all)
-        # Shift model time axis by t_shift and compare on observed t_obs.
-        # Legacy convention:
-        # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
-        t_eval = t_obs + t_shift
-
-        try:
-            y_mod = predict_multiband(
-                model=model,
-                params=model_params,
-                z=ctx.distance.z,
-                distance_modulus=None if ctx.distance.DL_cm is None else _distance_modulus_from_cm(float(ctx.distance.DL_cm)),
-                filters=filters,
-                t_days=t_eval,
-                band=band,
-                y_kind=ctx.y_kind,
-                mag_system=ctx.mag_system,
-                extinction=extinction_spec,
-                interp_fill=interp_fill_fit,
-                **model_kwargs_pred,
-            )
-        except _NonPhysicalModelOutput:
-            return -np.inf
-
-        if np.any(~np.isfinite(y_mod)):
-            return -np.inf
-
-        return lp + lp_phys + gaussian_lnlike_for_observation(
-            y_kind=ctx.y_kind,
-            y_obs=y_obs,
-            y_model=y_mod,
-            y_err=y_err,
-        )
+    distance_modulus_fit = (
+        None
+        if ctx.distance.DL_cm is None
+        else _distance_modulus_from_cm(float(ctx.distance.DL_cm))
+    )
+    predictor = _MultibandPredictor(
+        model=model,
+        z=ctx.distance.z,
+        distance_modulus=distance_modulus_fit,
+        filters=filters,
+        band=band,
+        y_kind=ctx.y_kind,
+        mag_system=ctx.mag_system,
+        extinction_spec=extinction_spec,
+        interp_fill_fit=interp_fill_fit,
+        model_kwargs_pred=model_kwargs_pred,
+    )
+    lnprob = _FitLnProb(
+        prior=prior,
+        names_samp=names_samp,
+        fixed=fixed,
+        names_all=names_all,
+        t_obs=t_obs,
+        y_obs=y_obs,
+        y_err=y_err,
+        predictor=predictor,
+        likelihood_y_kind=ctx.y_kind,
+        nuisance_cfgs=nuisance_cfgs,
+    )
 
     samples, logp, meta, sampler_used = _run_sampler(
         sampler=sampler,
@@ -1272,7 +1542,11 @@ def fit_multiband(
             priors_input=dict(priors or {}),
             priors_linear=dict(priors_lin or {}),
             priors_log10=dict(priors_log10 or {}),
-            log_prior_names=sorted([n for n in names_samp if n in log_set_all]),
+            nuisance_priors=_likelihood_nuisance_meta(nuisance_cfgs),
+            log_prior_names=sorted(
+                [n for n, log_flag in zip(names_samp, log_flags_samp) if log_flag]
+            ),
+            likelihood=_fit_likelihood_name(nuisance_cfgs),
             interp_fill_fit=interp_fill_fit,
             model_kwargs=model_kwargs_pred,
             t_max_days_policy=tmax_meta,
@@ -1337,7 +1611,11 @@ def fit_bol(
     if np.any(~np.isfinite(y_obs)) or np.any(~np.isfinite(y_err)) or np.any(y_err <= 0):
         raise ValueError("data.y and data.yerr must be finite and yerr > 0.")
 
-    priors_lin, priors_log10 = _split_prior_specs(priors)
+    priors_model, fixed_model, nuisance_cfgs = _split_likelihood_nuisance_fit_inputs(
+        priors,
+        fixed,
+    )
+    priors_lin, priors_log10 = _split_prior_specs(priors_model)
     names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=True)
     bounds_all, log_set_all = _apply_log10_priors(names_all, bounds_all, priors_log10)
     # For bolometric fitting, T_floor stays internal and is not part of the fit state.
@@ -1350,9 +1628,7 @@ def fit_bol(
             log_set_all.remove("T_floor")
     _validate_sampling_bounds_physical_constraints(names_all, bounds_all)
 
-    fixed = dict(fixed or {})
-
-    names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed)
+    names_samp, bounds_samp, fixed = _split_sampling(names_all, bounds_all, fixed=fixed_model)
     _validate_fixed_physical_constraints(fixed)
     model_kwargs_pred, tmax_meta = _resolve_fit_t_max_days(
         model_kwargs_pred,
@@ -1362,40 +1638,33 @@ def fit_bol(
         fixed=fixed,
     )
     log_flags_samp = [n in log_set_all for n in names_samp]
+    names_samp, bounds_samp, log_flags_samp = _append_likelihood_nuisance_sampling(
+        names_samp,
+        bounds_samp,
+        log_flags_samp,
+        nuisance_cfgs,
+    )
+    fixed = _add_fixed_likelihood_nuisance(fixed, nuisance_cfgs)
     prior = MixedBoundsPrior(bounds=bounds_samp, param_names=names_samp, log_flags=log_flags_samp)
 
-    def lnprob(sample_vec: np.ndarray) -> float:
-        lp = prior.lnprior(sample_vec)
-        if not np.isfinite(lp):
-            return -np.inf
-
-        vals = _param_values_from_sample(sample_vec, names_samp, fixed)
-        lp_phys = _physical_constraints_lnprior(vals)
-        if not np.isfinite(lp_phys):
-            return -np.inf
-
-        model_params, t_shift = _assemble_model_params_from_values(vals, names_all)
-        # Shift model time axis by t_shift and compare on observed t_obs.
-        # Legacy convention:
-        # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
-        t_eval = t_obs + t_shift
-
-        try:
-            y_mod = predict_bol(
-                model=model,
-                params=model_params,
-                z=ctx.distance.get_z(),
-                t_days=t_eval,
-                interp_fill=interp_fill_fit,
-                **model_kwargs_pred,
-            )
-        except _NonPhysicalModelOutput:
-            return -np.inf
-
-        if np.any(~np.isfinite(y_mod)):
-            return -np.inf
-
-        return lp + lp_phys + gaussian_lnlike_flux(y_obs, y_mod, y_err)
+    predictor = _BolometricPredictor(
+        model=model,
+        z=ctx.distance.get_z(),
+        interp_fill_fit=interp_fill_fit,
+        model_kwargs_pred=model_kwargs_pred,
+    )
+    lnprob = _FitLnProb(
+        prior=prior,
+        names_samp=names_samp,
+        fixed=fixed,
+        names_all=names_all,
+        t_obs=t_obs,
+        y_obs=y_obs,
+        y_err=y_err,
+        predictor=predictor,
+        likelihood_y_kind="flux",
+        nuisance_cfgs=nuisance_cfgs,
+    )
 
     samples, logp, meta, sampler_used = _run_sampler(
         sampler=sampler,
@@ -1414,7 +1683,11 @@ def fit_bol(
             priors_input=dict(priors or {}),
             priors_linear=dict(priors_lin or {}),
             priors_log10=dict(priors_log10 or {}),
-            log_prior_names=sorted([n for n in names_samp if n in log_set_all]),
+            nuisance_priors=_likelihood_nuisance_meta(nuisance_cfgs),
+            log_prior_names=sorted(
+                [n for n, log_flag in zip(names_samp, log_flags_samp) if log_flag]
+            ),
+            likelihood=_fit_likelihood_name(nuisance_cfgs),
             interp_fill_fit=interp_fill_fit,
             model_kwargs=model_kwargs_pred,
             t_max_days_policy=tmax_meta,
