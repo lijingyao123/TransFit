@@ -1,7 +1,7 @@
 # Model Citation Guide
 
-If you use TransFit in a paper, cite the TransFit software paper and the
-model-specific method paper(s) relevant to the model family you used.
+If you use TransFit in a paper, cite the TransFit software paper. If you use
+the `csm` model, also cite the TransFit-CSM paper.
 
 This file gives the default recommendation for TransFit's public model names.
 It is not intended to replace a complete bibliography for a scientific paper.
@@ -26,46 +26,34 @@ archivePrefix = {arXiv},
 }
 ```
 
-## Model-specific Citations
+## Model-specific Citation Rules
 
-| TransFit model | Also cite |
+| TransFit model | Required citation |
 |---|---|
-| `nickel` | [Arnett 1982, ApJ, 253, 785](https://doi.org/10.1086/159681) |
-| `magnetar` | [Kasen & Bildsten 2010, ApJ, 717, 245](https://doi.org/10.1088/0004-637X/717/1/245) |
-| `magnetar_ni` | [Arnett 1982](https://doi.org/10.1086/159681) and [Kasen & Bildsten 2010](https://doi.org/10.1088/0004-637X/717/1/245) |
-| `csm` | [Chatzopoulos, Wheeler & Vinko 2012, ApJ, 746, 121](https://doi.org/10.1088/0004-637X/746/2/121) |
+| `nickel` | TransFit software paper |
+| `magnetar` | TransFit software paper |
+| `magnetar_ni` | TransFit software paper |
+| `csm` | TransFit software paper and [TransFit-CSM](https://doi.org/10.3847/1538-4357/ae434a) |
 
-## BibTeX for Model Papers
+## BibTeX for TransFit-CSM
 
 ```bibtex
-@ARTICLE{1982ApJ...253..785A,
-       author = {{Arnett}, W. David},
-        title = "{Type I supernovae. I - Analytic solutions for the early part of the light curve}",
+@ARTICLE{2026ApJ...999..186Z,
+       author = {{Zhang}, Yu-Hao and {Liu}, Liang-Duan and {Du}, Ze-Xin and {Wu}, Guang-Lei and {Li}, Jing-Yao and {Yu}, Yun-Wei},
+        title = "{TransFit-CSM: A Fast, Physically Consistent Framework for Interaction-powered Transients}",
       journal = {\apj},
-         year = 1982,
-       volume = {253},
-        pages = {785-797},
-          doi = {10.1086/159681}
-}
-
-@ARTICLE{2010ApJ...717..245K,
-       author = {{Kasen}, Daniel and {Bildsten}, Lars},
-        title = "{Supernova Light Curves Powered by Young Magnetars}",
-      journal = {\apj},
-         year = 2010,
-       volume = {717},
-        pages = {245-249},
-          doi = {10.1088/0004-637X/717/1/245}
-}
-
-@ARTICLE{2012ApJ...746..121C,
-       author = {{Chatzopoulos}, Emmanouil and {Wheeler}, J. Craig and {Vinko}, Jozsef},
-        title = "{Generalized Semi-analytical Models of Supernova Light Curves}",
-      journal = {\apj},
-         year = 2012,
-       volume = {746},
-          eid = {121},
-        pages = {121},
-          doi = {10.1088/0004-637X/746/2/121}
+     keywords = {Core-collapse supernovae, Supernovae, Circumstellar matter, Stellar mass loss, 304, 1668, 241, 1613, High Energy Astrophysical Phenomena},
+         year = 2026,
+        month = mar,
+       volume = {999},
+       number = {2},
+          eid = {186},
+        pages = {186},
+          doi = {10.3847/1538-4357/ae434a},
+archivePrefix = {arXiv},
+       eprint = {2511.13265},
+ primaryClass = {astro-ph.HE},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2026ApJ...999..186Z},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
 }
 ```

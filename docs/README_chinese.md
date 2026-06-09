@@ -381,8 +381,7 @@ archivePrefix = {arXiv},
 }
 ```
 
-不同物理模型需要同时引用不同的模型方法论文。请查看
-[模型引用指南](model_citations.md)，根据你使用的 `nickel`、`magnetar`、
-`magnetar_ni` 或 `csm` 模型选择对应引用。
+模型引用细节请查看 [模型引用指南](model_citations.md)。所有模型都引用
+TransFit；使用 `csm` 时额外引用 TransFit-CSM。
 
 部分代码与教程内容由 Codex 协助生成。

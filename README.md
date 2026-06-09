@@ -387,8 +387,8 @@ archivePrefix = {arXiv},
 }
 ```
 
-Different physical models require different model-method citations. See the
-[model citation guide](docs/model_citations.md) for the recommended citation
-set for `nickel`, `magnetar`, `magnetar_ni`, and `csm`.
+For model-specific citation details, see the
+[model citation guide](docs/model_citations.md). Cite TransFit for all models,
+and additionally cite TransFit-CSM when using `csm`.
 
 Some code and tutorial content were generated with assistance from Codex.
