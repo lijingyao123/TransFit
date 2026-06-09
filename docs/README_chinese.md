@@ -1,11 +1,11 @@
 # TransFit 简体中文版
 
 <p align="right">
-  <strong>语言：</strong><a href="README.md">English</a> | 简体中文
+  <strong>语言：</strong><a href="../README.md">English</a> | 简体中文
 </p>
 
 <p align="center">
-  <img src="docs/TransFit_logo.png" width="430" alt="TransFit logo">
+  <img src="TransFit_logo.png" width="430" alt="TransFit logo">
 </p>
 
 <p align="center">
@@ -21,8 +21,8 @@
   <a href="#安装方式">安装</a> |
   <a href="#快速开始">快速开始</a> |
   <a href="#公开-api">公开 API</a> |
-  <a href="examples/tutorial.ipynb">教程 Notebook</a> |
-  <a href="examples/data">示例数据</a> |
+  <a href="../examples/tutorial.ipynb">教程 Notebook</a> |
+  <a href="../examples/data">示例数据</a> |
   <a href="https://doi.org/10.3847/1538-4357/adfed6">论文</a>
 </p>
 
@@ -114,9 +114,7 @@ python -m pip install -e . --no-deps
 ## 快速开始
 
 <details>
-<summary><strong>展开快速开始示例</strong></summary>
-
-### 查看模型参数
+<summary><strong>查看模型参数</strong></summary>
 
 ```python
 import transfit as tf
@@ -125,7 +123,10 @@ tf.model_param_names("nickel")
 tf.param_template("nickel")
 ```
 
-### 正向计算光变曲线
+</details>
+
+<details>
+<summary><strong>正向计算光变曲线</strong></summary>
 
 测光光变曲线：
 
@@ -160,7 +161,7 @@ ax.set_ylabel("Bolometric luminosity (erg s$^{-1}$)")
 ```
 
 <p align="center">
-  <img src="docs/lightcurve_bol.png" alt="Bolometric light curve example">
+  <img src="lightcurve_bol.png" alt="Bolometric light curve example">
 </p>
 
 多波段光变曲线：
@@ -211,10 +212,13 @@ ax.legend()
 ```
 
 <p align="center">
-  <img src="docs/lightcurve_multiband.png" alt="Multi-band light curve example">
+  <img src="lightcurve_multiband.png" alt="Multi-band light curve example">
 </p>
 
-### 拟合数据
+</details>
+
+<details>
+<summary><strong>拟合数据</strong></summary>
 
 先构造数据容器：
 
@@ -338,11 +342,11 @@ python -m pytest -q
 
 ## 文档
 
-- [教程 Notebook](examples/tutorial.ipynb)
-- [示例数据](examples/data)
-- [多波段测光设计](docs/multiband_photometry_design.md)
-- [模型参数参考](docs/model_parameter_reference.tex)
-- [物理回归与收敛测试](examples/physical_regression_and_convergence_tests.ipynb)
+- [教程 Notebook](../examples/tutorial.ipynb)
+- [示例数据](../examples/data)
+- [多波段测光设计](multiband_photometry_design.md)
+- [模型参数参考](model_parameter_reference.tex)
+- [物理回归与收敛测试](../examples/physical_regression_and_convergence_tests.ipynb)
 
 ---
 

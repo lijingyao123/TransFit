@@ -1,7 +1,7 @@
 # TransFit
 
 <p align="right">
-  <strong>Language:</strong> English | <a href="README_chinese.md">简体中文</a>
+  <strong>Language:</strong> English | <a href="docs/README_chinese.md">简体中文</a>
 </p>
 
 <p align="center">
@@ -117,9 +117,7 @@ default `fit_bol()` and `fit_multiband()` samplers require `emcee`.
 ## Quick Start
 
 <details>
-<summary><strong>Open Quick Start examples</strong></summary>
-
-### Inspect Model Parameters
+<summary><strong>Inspect Model Parameters</strong></summary>
 
 ```python
 import transfit as tf
@@ -128,7 +126,10 @@ tf.model_param_names("nickel")
 tf.param_template("nickel")
 ```
 
-### Forward Light Curves
+</details>
+
+<details>
+<summary><strong>Forward Light Curves</strong></summary>
 
 Bolometric light curve:
 
@@ -217,7 +218,10 @@ ax.legend()
   <img src="docs/lightcurve_multiband.png" alt="Multi-band light curve example">
 </p>
 
-### Fit Data
+</details>
+
+<details>
+<summary><strong>Fit Data</strong></summary>
 
 Prepare a data container:
 
