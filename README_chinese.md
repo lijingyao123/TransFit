@@ -113,6 +113,9 @@ python -m pip install -e . --no-deps
 
 ## 快速开始
 
+<details>
+<summary><strong>展开快速开始示例</strong></summary>
+
 ### 查看模型参数
 
 ```python
@@ -273,6 +276,8 @@ loaded = tf.load(path)
 print(path)
 print(loaded["samples"].shape)
 ```
+
+</details>
 
 ---
 

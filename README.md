@@ -116,6 +116,9 @@ default `fit_bol()` and `fit_multiband()` samplers require `emcee`.
 
 ## Quick Start
 
+<details>
+<summary><strong>Open Quick Start examples</strong></summary>
+
 ### Inspect Model Parameters
 
 ```python
@@ -276,6 +279,8 @@ loaded = tf.load(path)
 print(path)
 print(loaded["samples"].shape)
 ```
+
+</details>
 
 ---
 
