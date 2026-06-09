@@ -13,7 +13,7 @@ from .modules.filters import FilterProfile, normalize_filters, validate_filter_m
 from .modules.interp import interp_fit
 from .modules.labels import normalize_band_label
 from .modules.likelihood import gaussian_lnlike_with_nuisance
-from .modules.photometry import evaluate_multiband_observer_output
+from .modules.photometry import evaluate_multiband_observer_output, validate_observation_mode
 from .modules.sed import BlackbodySED
 from .model_registry import canonical_model_name, forward_param_defaults
 from .samplers import FitResult, run_emcee, run_zeus, run_dynesty
@@ -146,8 +146,7 @@ def _context_from_fit_inputs(
         raise ValueError(
             "filters is required for multiband fitting."
         )
-    y_kind_n = str(y_kind).strip().lower()
-    mag_system_n = str(mag_system).strip().lower()
+    y_kind_n, mag_system_n = validate_observation_mode(y_kind, mag_system)
     return _Context(
         distance=_distance_from_public_inputs(
             z=z,
@@ -183,8 +182,7 @@ def _context_from_forward_inputs(
     """
     if require_filters and filters is None:
         raise ValueError("filters is required for multiband forward calculations.")
-    y_kind_n = str(y_kind).strip().lower()
-    mag_system_n = str(mag_system).strip().lower()
+    y_kind_n, mag_system_n = validate_observation_mode(y_kind, mag_system)
     return _Context(
         distance=_distance_from_public_inputs(
             z=z,
@@ -240,14 +238,34 @@ def _check_same_length(**arrays: np.ndarray) -> None:
 
 def _apply_data_filter(data):
     """
-    Apply container-level masking/cleaning when available.
+    Apply container-level masking when available.
 
-    This makes `mask` a first-class part of the public fitting API instead of
-    requiring users to remember calling `.filtered()` manually.
+    This makes `mask` a first-class part of the public fitting API. Invalid
+    unmasked values are validated later and must not be silently dropped.
     """
     if hasattr(data, "filtered"):
         return data.filtered()
     return data
+
+
+def _validate_fit_time_and_errors(t_obs: np.ndarray, y_err: np.ndarray) -> None:
+    if np.any(~np.isfinite(t_obs)):
+        raise ValueError("data.t_days must be finite.")
+    if np.any(~np.isfinite(y_err)) or np.any(y_err <= 0.0):
+        raise ValueError("data.yerr must be finite and > 0.")
+
+
+def _validate_multiband_fit_y(y_obs: np.ndarray, *, y_kind: str) -> None:
+    kind = str(y_kind).strip().lower()
+    if kind not in ("mag", "flux"):
+        raise ValueError("y_kind must be 'mag' or 'flux'.")
+    if np.any(~np.isfinite(y_obs)):
+        raise ValueError(f"data.y must be finite when y_kind='{kind}'.")
+
+
+def _validate_bolometric_fit_y(y_obs: np.ndarray) -> None:
+    if np.any(~np.isfinite(y_obs)) or np.any(y_obs <= 0.0):
+        raise ValueError("data.y must be positive and finite for bolometric fitting.")
 
 
 # -------------------------
@@ -861,6 +879,14 @@ def _apply_log10_priors(
     return b, log_set
 
 
+def _validate_prior_bounds_pair(name: str, lo: float, hi: float) -> Tuple[float, float]:
+    lo = float(lo)
+    hi = float(hi)
+    if not (np.isfinite(lo) and np.isfinite(hi) and lo < hi):
+        raise ValueError(f"Invalid bounds for '{name}': ({lo}, {hi}); require finite lo < hi.")
+    return lo, hi
+
+
 def _split_prior_specs(
     priors: Optional[Dict[str, Any]],
 ):
@@ -887,10 +913,7 @@ def _split_prior_specs(
             b = spec["bounds"]
             if b is None or len(b) != 2:
                 raise ValueError(f"Invalid bounds for '{k}': {b!r}")
-            lo = float(b[0])
-            hi = float(b[1])
-            if not (lo < hi):
-                raise ValueError(f"Invalid bounds for '{k}': ({lo}, {hi})")
+            lo, hi = _validate_prior_bounds_pair(k, b[0], b[1])
 
             scale = str(spec.get("scale", "linear")).strip().lower()
             if scale in ("linear", "lin"):
@@ -905,19 +928,13 @@ def _split_prior_specs(
 
         if isinstance(spec, (tuple, list)):
             if len(spec) == 2 and not isinstance(spec[0], str):
-                lo = float(spec[0])
-                hi = float(spec[1])
-                if not (lo < hi):
-                    raise ValueError(f"Invalid bounds for '{k}': ({lo}, {hi})")
+                lo, hi = _validate_prior_bounds_pair(k, spec[0], spec[1])
                 pri_lin[k] = (lo, hi)
                 continue
 
             if len(spec) == 3 and isinstance(spec[0], str):
                 mode = str(spec[0]).strip().lower()
-                lo = float(spec[1])
-                hi = float(spec[2])
-                if not (lo < hi):
-                    raise ValueError(f"Invalid bounds for '{k}': ({lo}, {hi})")
+                lo, hi = _validate_prior_bounds_pair(k, spec[1], spec[2])
                 if mode in ("log10", "log"):
                     pri_log10[k] = (lo, hi)
                 elif mode in ("linear", "lin"):
@@ -1447,8 +1464,8 @@ def fit_multiband(
 
     _check_same_length(t_days=t_obs, band=band, y=y_obs, yerr=y_err)
 
-    if np.any(~np.isfinite(y_obs)) or np.any(~np.isfinite(y_err)) or np.any(y_err <= 0):
-        raise ValueError("data.y and data.yerr must be finite and yerr > 0.")
+    _validate_fit_time_and_errors(t_obs, y_err)
+    _validate_multiband_fit_y(y_obs, y_kind=ctx.y_kind)
 
     # ---- bounds/prior ----
     priors_model, fixed_model, nuisance_cfgs = _split_likelihood_nuisance_fit_inputs(
@@ -1608,8 +1625,8 @@ def fit_bol(
     y_err = _as_1d_float(data.yerr, "data.yerr")
     _check_same_length(t_days=t_obs, y=y_obs, yerr=y_err)
 
-    if np.any(~np.isfinite(y_obs)) or np.any(~np.isfinite(y_err)) or np.any(y_err <= 0):
-        raise ValueError("data.y and data.yerr must be finite and yerr > 0.")
+    _validate_fit_time_and_errors(t_obs, y_err)
+    _validate_bolometric_fit_y(y_obs)
 
     priors_model, fixed_model, nuisance_cfgs = _split_likelihood_nuisance_fit_inputs(
         priors,

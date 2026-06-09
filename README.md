@@ -67,8 +67,7 @@ Bayesian samplers.
 ### Bayesian Fitting
 
 - Bolometric and multi-band fitting with the same result object.
-- Sampler support through optional backends including `emcee`, `zeus`, and
-  `dynesty`.
+- Default fitting with `emcee`, with optional `zeus` and `dynesty` backends.
 - Compact result access through `res.best_params`, `res.best_params_raw`,
   `res.median_params`, and `res.best_fit`.
 
@@ -93,25 +92,43 @@ Bayesian samplers.
 
 ## Installation
 
-Clone the repository and install TransFit in editable mode:
+Install TransFit with the default fitting backend (`emcee`):
+
+```bash
+python -m pip install transfit
+```
+
+For local development from a cloned repository:
 
 ```bash
 git clone <your-repo-url>
 cd TransFit
-python -m pip install -e .
+python -m pip install -e ".[plot,examples]"
 ```
 
-Install example and plotting dependencies when you want to run notebooks:
+Install all sampler backends (`emcee`, `zeus`, and `dynesty`):
 
 ```bash
-python -m pip install -e ".[examples,plot]"
+python -m pip install "transfit[all-samplers]"
 ```
 
-Install all optional fitting backends:
+For a lightweight forward-model-only environment without installing `emcee`,
+install the core numerical dependencies yourself and then install TransFit
+without dependencies:
 
 ```bash
-python -m pip install -e ".[all]"
+python -m pip install numpy numba astropy scipy
+python -m pip install transfit --no-deps
 ```
+
+From a cloned repository, the equivalent lightweight editable install is:
+
+```bash
+python -m pip install -e . --no-deps
+```
+
+This lightweight path is intended for forward light-curve generation only. The
+default `fit_bol()` and `fit_multiband()` samplers require `emcee`.
 
 ---
 

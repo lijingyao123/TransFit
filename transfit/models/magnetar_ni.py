@@ -130,7 +130,10 @@ class MagNiModel:
 
         M_ej = float(M_ej) * M_SUN
         E_Th_in = float(E_Th_in) * 1.0e49
-        M_Ni = max(float(M_Ni), 0.0) * M_SUN
+        M_Ni = float(M_Ni)
+        if not np.isfinite(M_Ni) or M_Ni < 0.0:
+            raise ValueError("M_Ni must be finite and >= 0.")
+        M_Ni = M_Ni * M_SUN
         R_max_in = float(R_max_in) * R_SUN
         x_s = 0.05
         kappa0 = float(kappa0)

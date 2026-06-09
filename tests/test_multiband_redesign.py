@@ -59,6 +59,13 @@ LEGACY_PARAMS_NI = {
 }
 
 
+def _fixed_bol_params():
+    fixed = dict(PARAMS_NI)
+    fixed.pop("T_floor")
+    fixed["t_shift"] = 0.0
+    return fixed
+
+
 def _standard_normal_lnprob(x):
     x = np.asarray(x, float)
     return -0.5 * float(np.sum(x * x))
@@ -170,6 +177,48 @@ def test_t_shift_prior_is_non_negative():
         )
 
 
+def test_fit_bol_rejects_unmasked_bad_luminosity_values():
+    for y in (
+        np.array([np.nan, 1.1e41], float),
+        np.array([-1.0e41, 1.1e41], float),
+    ):
+        data = tf.BolometricData(
+            t_days=np.array([1.0, 2.0], float),
+            y=y,
+            yerr=np.array([1.0e40, 1.0e40], float),
+        )
+        with pytest.raises(ValueError, match="positive and finite"):
+            tf.fit_bol(
+                data=data,
+                model="nickel",
+                fixed=_fixed_bol_params(),
+                model_kwargs={"Nx": 20, "Ny": 50, "t_max_days": 5.0},
+            )
+
+
+def test_fit_bol_allows_explicit_mask_to_exclude_bad_luminosity(monkeypatch):
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        sample = np.empty((1, len(prior.param_names)), dtype=float)
+        return sample, np.array([0.0], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    data = tf.BolometricData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        y=np.array([np.nan, 1.1e41, -1.0e41], float),
+        yerr=np.array([1.0e40, 1.0e40, 1.0e40], float),
+        mask=np.array([False, True, False], bool),
+    )
+    res = tf.fit_bol(
+        data=data,
+        model="nickel",
+        fixed=_fixed_bol_params(),
+        model_kwargs={"Nx": 20, "Ny": 50, "t_max_days": 5.0},
+    )
+
+    assert res.samples.shape == (1, 0)
+
+
 def test_fit_auto_t_max_days_covers_t_shift_prior(monkeypatch):
     def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
         sample = np.mean(np.asarray(prior.bounds, float), axis=1)
@@ -233,6 +282,72 @@ def test_public_forward_rejects_nonphysical_parameters_before_solving():
             solver_kwargs={"Nx": 20, "Ny": 50},
             t_max_days=5.0,
         )
+
+
+def test_prior_bounds_must_be_finite():
+    with pytest.raises(ValueError, match="finite lo < hi"):
+        api._split_prior_specs({"M_ej": (1.0, np.inf)})
+
+    with pytest.raises(ValueError, match="bounds must be finite"):
+        UniformBoundsPrior(bounds=[[0.0, np.inf]], param_names=["x"])
+
+    with pytest.raises(ValueError, match="bounds must be finite"):
+        MixedBoundsPrior(bounds=[[0.1, np.inf]], param_names=["x"], log_flags=[True])
+
+
+def test_fit_multiband_rejects_invalid_observation_mode_before_sampling(monkeypatch):
+    def fail_run_sampler(*args, **kwargs):
+        raise AssertionError("sampler should not run for invalid observation mode")
+
+    monkeypatch.setattr(api, "_run_sampler", fail_run_sampler)
+
+    fixed = dict(PARAMS_NI)
+    fixed["t_shift"] = 0.0
+    data = tf.MultiBandData(
+        t_days=np.array([1.0], float),
+        band=np.array(["B"], dtype=object),
+        y=np.array([20.0], float),
+        yerr=np.array([0.1], float),
+    )
+
+    with pytest.raises(ValueError, match="y_kind"):
+        tf.fit_multiband(
+            data=data,
+            model="nickel",
+            z=0.001,
+            distance_modulus=MU_7P5_MPC,
+            filters={"B": "johnson_cousins.B"},
+            y_kind="bad",
+            fixed=fixed,
+            model_kwargs={"Nx": 20, "Ny": 50, "t_max_days": 5.0},
+        )
+
+    with pytest.raises(ValueError, match="mag_system"):
+        tf.fit_multiband(
+            data=data,
+            model="nickel",
+            z=0.001,
+            distance_modulus=MU_7P5_MPC,
+            filters={"B": "johnson_cousins.B"},
+            mag_system="bad",
+            fixed=fixed,
+            model_kwargs={"Nx": 20, "Ny": 50, "t_max_days": 5.0},
+        )
+
+
+def test_model_classes_reject_values_previously_silent_clamped():
+    from transfit.models.nickel import NickelModel
+    from transfit.models.magnetar_ni import MagNiModel
+
+    bad_nickel = list(PARAMS_NI.values())
+    bad_nickel[5] = 1.5
+    with pytest.raises(ValueError, match="x_Ni"):
+        NickelModel().calculate_light_curve(bad_nickel, Nx=20, Ny=50, t_max_days=5.0)
+
+    bad_magni = list(MagNiModel._warmup_theta)
+    bad_magni[4] = -0.1
+    with pytest.raises(ValueError, match="M_Ni"):
+        MagNiModel().calculate_light_curve(bad_magni, Nx=20, Ny=50, t_max_days=5.0)
 
 
 def test_public_forward_rejects_nonphysical_solver_output(monkeypatch):

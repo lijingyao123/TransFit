@@ -55,17 +55,15 @@ class MultiBandData:
 
     def filtered(self) -> "MultiBandData":
         """
-        Return a new MultiBandData with invalid points removed:
-        finite t/y/yerr and yerr>0, plus optional mask.
+        Return a new MultiBandData with the explicit mask applied.
+
+        This method does not silently remove invalid values. Public fitting
+        APIs validate remaining data and raise clear errors instead.
         """
-        good = (
-            np.isfinite(self.t_days)
-            & np.isfinite(self.y)
-            & np.isfinite(self.yerr)
-            & (self.yerr > 0)
-        )
-        if self.mask is not None:
-            good &= np.asarray(self.mask, bool)
+        if self.mask is None:
+            return self
+
+        good = np.asarray(self.mask, bool)
 
         return MultiBandData(
             t_days=self.t_days[good],
@@ -114,7 +112,14 @@ class BolometricData:
         object.__setattr__(self, "yerr", e)
 
     def filtered(self) -> "BolometricData":
-        good = np.isfinite(self.t_days) & np.isfinite(self.y) & np.isfinite(self.yerr) & (self.yerr > 0)
-        if self.mask is not None:
-            good &= np.asarray(self.mask, bool)
+        """
+        Return a new BolometricData with the explicit mask applied.
+
+        Invalid luminosities or uncertainties are rejected by fitting APIs
+        unless the user excludes them with `mask`.
+        """
+        if self.mask is None:
+            return self
+
+        good = np.asarray(self.mask, bool)
         return BolometricData(self.t_days[good], self.y[good], self.yerr[good], None)

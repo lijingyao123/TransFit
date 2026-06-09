@@ -16,6 +16,10 @@ class UniformBoundsPrior:
             raise ValueError("bounds must be shape (ndim, 2)")
         if len(self.param_names) != b.shape[0]:
             raise ValueError("param_names length must match bounds ndim")
+        lo = b[:, 0]
+        hi = b[:, 1]
+        if np.any(~np.isfinite(b)) or np.any(lo >= hi):
+            raise ValueError("bounds must be finite and satisfy lo < hi")
         object.__setattr__(self, "bounds", b)
 
     def lnprior(self, theta: np.ndarray) -> float:
@@ -56,6 +60,10 @@ class MixedBoundsPrior:
             raise ValueError("bounds must be shape (ndim, 2)")
         if len(self.param_names) != b.shape[0]:
             raise ValueError("param_names length must match bounds ndim")
+        lo = b[:, 0]
+        hi = b[:, 1]
+        if np.any(~np.isfinite(b)) or np.any(lo >= hi):
+            raise ValueError("bounds must be finite and satisfy lo < hi")
 
         if self.log_flags is None:
             lf = np.zeros(b.shape[0], dtype=bool)
@@ -65,8 +73,6 @@ class MixedBoundsPrior:
                 raise ValueError("log_flags length must match bounds ndim")
 
         if np.any(lf):
-            lo = b[:, 0]
-            hi = b[:, 1]
             bad = np.where(lf & ((lo <= 0.0) | (hi <= 0.0)))[0]
             if bad.size > 0:
                 names = [str(self.param_names[int(i)]) for i in bad.tolist()]
@@ -130,8 +136,8 @@ def apply_user_bounds(names, bounds: np.ndarray, priors: Optional[Dict[str, Tupl
         if k not in idx:
             raise KeyError(f"Unknown prior key '{k}'. Allowed: {list(names)}")
         lo, hi = float(lo), float(hi)
-        if not (lo < hi):
-            raise ValueError(f"Invalid bounds for '{k}': ({lo},{hi})")
+        if not (np.isfinite(lo) and np.isfinite(hi) and lo < hi):
+            raise ValueError(f"Invalid bounds for '{k}': ({lo},{hi}); require finite lo < hi")
         b[idx[k], 0] = lo
         b[idx[k], 1] = hi
     return b

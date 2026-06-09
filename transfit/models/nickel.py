@@ -181,7 +181,9 @@ class NickelModel:
         M_Ni = float(M_Ni) * M_SUN
         R_max_in = float(R_max_in) * R_SUN
 
-        x_s = float(np.clip(x_s, 0.0, 1.0))
+        x_s = float(x_s)
+        if not np.isfinite(x_s) or not (0.0 <= x_s <= 1.0):
+            raise ValueError("x_Ni must be finite and in [0, 1].")
         kappa0 = float(kappa0)
         kappa_g = float(kappa_gamma)
         v_ej = float(v_ej) * 1e9

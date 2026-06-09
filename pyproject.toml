@@ -39,17 +39,16 @@ dependencies = [
   "numba",
   "astropy",
   "scipy",
+  "emcee",
 ]
 
 [project.optional-dependencies]
 plot = ["matplotlib", "corner"]
 examples = ["matplotlib", "pandas"]
-emcee = ["emcee"]
 zeus = ["zeus-mcmc"]
 dynesty = ["dynesty"]
 dev = ["build", "pytest"]
-fit = [
-  "emcee",
+all-samplers = [
   "zeus-mcmc",
   "dynesty",
 ]
@@ -57,7 +56,6 @@ all = [
   "matplotlib",
   "pandas",
   "corner",
-  "emcee",
   "zeus-mcmc",
   "dynesty",
 ]
