@@ -26,6 +26,10 @@ def build_bounds(
         from .magnetar_ni import default_names_and_bounds
         names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
 
+    elif m == "csm":
+        from .csm import default_names_and_bounds
+        names, bounds = default_names_and_bounds(include_t_shift=include_t_shift)
+
     else:
         raise ValueError(f"Unknown model='{model}' for priors.build_bounds")
 

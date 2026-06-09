@@ -29,6 +29,7 @@ from transfit.constants import DAY, MPC, PC
 _BOL_INTERNAL_T_FLOOR = 1000.0
 _FIT_T_MAX_DAYS_DEFAULT = 150.0
 _FIT_T_MAX_DAYS_PADDING = 20.0
+_CSM_INTERNAL_R_CSM_IN = 100.0
 
 
 class _NonPhysicalModelOutput(ValueError):
@@ -297,6 +298,12 @@ def _get_engine(model: str):
         _ENGINE_CACHE[m] = eng
         return eng
 
+    if m == "csm":
+        from .models.csm import CSMModel
+        eng = CSMModel()
+        _ENGINE_CACHE[m] = eng
+        return eng
+
     raise ValueError(f"Unknown model='{model}'")
 
 
@@ -354,9 +361,23 @@ def _model_vector_from_params(
     return tuple(model_vector)
 
 
-_NONNEGATIVE_PARAMS = {"E_Th_in", "M_Ni", "t_shift"}
-_POSITIVE_PARAMS = {"M_ej", "v_ej", "R_0", "kappa", "kappa_gamma", "T_floor", "P_ms", "B14"}
-_UNIT_INTERVAL_PARAMS = {"x_Ni"}
+_NONNEGATIVE_PARAMS = {"E_Th_in", "M_Ni", "delta", "s", "t_shift"}
+_POSITIVE_PARAMS = {
+    "M_csm",
+    "M_ej",
+    "v_ej",
+    "E_sn",
+    "n",
+    "R_0",
+    "R_csm_in",
+    "R_csm_out",
+    "kappa",
+    "kappa_gamma",
+    "T_floor",
+    "P_ms",
+    "B14",
+}
+_UNIT_INTERVAL_PARAMS = {"eps_sh", "x_Ni"}
 
 
 def _model_values_from_vector(model: str, model_vector) -> Dict[str, float]:
@@ -392,9 +413,28 @@ def _physical_constraint_reason(vals: Dict[str, float]) -> Optional[str]:
         if not (0.0 <= values[name] <= 1.0):
             return f"{name} must be in [0, 1]."
 
+    if "s" in values and not (values["s"] < 3.0):
+        return "s must be < 3."
+
+    if "n" in values:
+        if not (values["n"] > 5.0):
+            return "n must be > 5."
+        if "s" in values and not (values["n"] > values["s"]):
+            return "n must be > s."
+
+    if "delta" in values and not (values["delta"] < 3.0):
+        return "delta must be < 3."
+
     if "M_Ni" in values and "M_ej" in values:
         if values["M_Ni"] > values["M_ej"]:
             return "M_Ni must be <= M_ej."
+
+    if "R_csm_in" in values and "R_csm_out" in values:
+        if not (values["R_csm_out"] > values["R_csm_in"]):
+            return "R_csm_out must be > R_csm_in."
+    elif "R_csm_out" in values:
+        if not (values["R_csm_out"] > _CSM_INTERNAL_R_CSM_IN):
+            return "R_csm_out must be > R_csm_in."
 
     return None
 

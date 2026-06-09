@@ -48,6 +48,17 @@ PARAMS_NI = {
     "T_floor": 3000.0,
 }
 
+PARAMS_CSM = {
+    "M_ej": 5.0,
+    "E_sn": 1.0,
+    "M_csm": 1.0,
+    "R_csm_out": 10000.0,
+    "kappa": 0.34,
+    "s": 2.0,
+    "eps_sh": 0.8,
+    "T_floor": 5000.0,
+}
+
 LEGACY_PARAMS_NI = {
     "M_ej": 3.0,
     "v_ej": 1.0,
@@ -74,10 +85,14 @@ def _standard_normal_lnprob(x):
 def test_public_nickel_and_magnetar_use_canonical_full_parameter_sets():
     nickel_names = tf.model_param_names("nickel")
     magnetar_names = tf.model_param_names("magnetar")
+    csm_names = tf.model_param_names("csm")
 
     assert nickel_names == ["M_ej", "v_ej", "E_Th_in", "M_Ni", "R_0", "x_Ni", "kappa", "kappa_gamma", "T_floor"]
     assert magnetar_names == ["M_ej", "v_ej", "E_Th_in", "P_ms", "B14", "R_0", "kappa", "kappa_gamma", "T_floor"]
+    assert csm_names == ["M_ej", "E_sn", "M_csm", "R_csm_out", "kappa", "s", "eps_sh", "T_floor"]
     assert tf.model_param_names("nickel", include_t_shift=True)[-1] == "t_shift"
+    assert tf.model_param_names("interaction") == csm_names
+    assert tf.model_param_names("csm", include_t_shift=True)[-1] == "t_shift"
 
 
 def test_public_forward_signatures_use_params_not_theta():
@@ -88,6 +103,57 @@ def test_public_forward_signatures_use_params_not_theta():
         assert "Nx" not in params
         assert "Ny" not in params
         assert "solver_kwargs" in params
+
+
+def test_csm_forward_api_outputs_positive_finite_bolometric_curve():
+    params = dict(PARAMS_CSM)
+    params.pop("s")
+    params.pop("T_floor")
+
+    lc = tf.lightcurve_bol(
+        model="csm",
+        params=params,
+        z=0.0,
+        t_max_days=20.0,
+        solver_kwargs={"Nx": 20, "Ny": 40},
+    )
+
+    assert lc.t_days.size == 45
+    assert np.all(np.diff(lc.t_days) > 0.0)
+    assert np.all(np.isfinite(lc.Lbol))
+    assert np.all(lc.Lbol > 0.0)
+    assert np.all(np.isfinite(lc.Teff))
+    assert np.all(lc.Teff > 0.0)
+    assert np.all(np.isfinite(lc.Rph))
+    assert np.all(lc.Rph > 0.0)
+
+    pred = tf.predict_bol(
+        model="csm",
+        params=params,
+        z=0.0,
+        t_days=np.array([1.0, 3.0, 10.0], float),
+        t_max_days=20.0,
+        solver_kwargs={"Nx": 20, "Ny": 40},
+    )
+    assert np.all(np.isfinite(pred))
+    assert np.all(pred > 0.0)
+
+
+def test_csm_multiband_forward_uses_canonical_full_params():
+    lc = tf.lightcurve_multiband(
+        model="csm",
+        params=PARAMS_CSM,
+        z=0.001728,
+        distance_modulus=MU_7P5_MPC,
+        filters={"B": "johnson_cousins.B"},
+        bands=["B"],
+        y_kind="mag",
+        t_max_days=20.0,
+        solver_kwargs={"Nx": 20, "Ny": 40},
+    )
+
+    assert lc.bands == ["B"]
+    assert np.all(np.isfinite(lc.y["B"]))
 
 
 def test_fit_result_uses_params_for_public_best_fit_values():
@@ -157,6 +223,16 @@ def test_physical_constraints_reject_ni_mass_larger_than_ejecta():
     assert _physical_constraints_lnprior({"T_floor": np.nan}) == -np.inf
     assert _physical_constraints_lnprior({"t_shift": -0.1}) == -np.inf
     assert _physical_constraints_lnprior({"t_shift": 0.0}) == pytest.approx(0.0)
+    assert _physical_constraints_lnprior({"M_csm": 0.0}) == -np.inf
+    assert _physical_constraints_lnprior({"E_sn": -1.0}) == -np.inf
+    assert _physical_constraints_lnprior({"eps_sh": 1.1}) == -np.inf
+    assert _physical_constraints_lnprior({"s": 3.0}) == -np.inf
+    assert _physical_constraints_lnprior({"n": 5.0}) == -np.inf
+    assert _physical_constraints_lnprior({"s": 2.0, "n": 1.5}) == -np.inf
+    assert _physical_constraints_lnprior({"delta": -0.1}) == -np.inf
+    assert _physical_constraints_lnprior({"delta": 3.0}) == -np.inf
+    assert _physical_constraints_lnprior({"R_csm_in": 100.0, "R_csm_out": 99.0}) == -np.inf
+    assert _physical_constraints_lnprior({"R_csm_in": 100.0, "R_csm_out": 1000.0}) == pytest.approx(0.0)
 
 
 def test_t_shift_prior_is_non_negative():
@@ -245,6 +321,41 @@ def test_fit_auto_t_max_days_covers_t_shift_prior(monkeypatch):
     assert res.meta["t_max_days_policy"]["t_max_days_auto"] is True
 
 
+def test_csm_fit_bol_reuses_public_fit_path(monkeypatch):
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        assert list(prior.param_names) == ["t_shift"]
+        sample = np.array([1.0], float)
+        logp = lnprob(sample)
+        assert np.isfinite(logp)
+        return sample.reshape(1, -1), np.array([logp], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    t_days = np.array([1.0, 3.0, 6.0], float)
+    y = tf.predict_bol(
+        model="csm",
+        params=PARAMS_CSM,
+        z=0.0,
+        t_days=t_days,
+        t_max_days=20.0,
+        solver_kwargs={"Nx": 20, "Ny": 40},
+    )
+    fixed = dict(PARAMS_CSM)
+    fixed.pop("T_floor")
+
+    res = tf.fit_bol(
+        data=tf.BolometricData(t_days=t_days, y=y, yerr=0.1 * y),
+        model="csm",
+        fixed=fixed,
+        model_kwargs={"solver_kwargs": {"Nx": 20, "Ny": 40}, "t_max_days": 30.0},
+    )
+
+    assert res.model == "csm"
+    assert res.param_names == ["t_shift"]
+    assert "T_floor" not in res.all_param_names
+    assert res.best_params["t_shift"] == pytest.approx(1.0)
+
+
 def test_fit_rejects_explicit_t_max_days_smaller_than_t_shift_range():
     data = tf.BolometricData(
         t_days=np.array([10.0, 100.0], float),
@@ -281,6 +392,16 @@ def test_public_forward_rejects_nonphysical_parameters_before_solving():
             t_days=np.array([1.0], float),
             solver_kwargs={"Nx": 20, "Ny": 50},
             t_max_days=5.0,
+        )
+
+    bad = dict(PARAMS_CSM)
+    bad["R_csm_out"] = 100.0
+    with pytest.raises(ValueError, match="R_csm_out must be > R_csm_in"):
+        tf.lightcurve_bol(
+            model="csm",
+            params=bad,
+            solver_kwargs={"Nx": 20, "Ny": 40},
+            t_max_days=20.0,
         )
 
 

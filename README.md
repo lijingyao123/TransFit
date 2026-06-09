@@ -36,7 +36,6 @@ Bayesian samplers.
 ## Table of Contents
 
 - [Features](#features)
-- [Example Outputs](#example-outputs)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
   - [Inspect Model Parameters](#inspect-model-parameters)
@@ -70,23 +69,6 @@ Bayesian samplers.
 - Default fitting with `emcee`, with optional `zeus` and `dynesty` backends.
 - Compact result access through `res.best_params`, `res.best_params_raw`,
   `res.median_params`, and `res.best_fit`.
-
----
-
-## Example Outputs
-
-<table>
-<tr>
-<td width="50%" align="center">
-  <img src="docs/lightcurve_bol.png" alt="Bolometric light curve example"><br>
-  <sub>Bolometric light curve</sub>
-</td>
-<td width="50%" align="center">
-  <img src="docs/lightcurve_multiband.png" alt="Multi-band light curve example"><br>
-  <sub>Multi-band light curve</sub>
-</td>
-</tr>
-</table>
 
 ---
 
@@ -177,6 +159,10 @@ ax.set_xlabel("Observer time (days)")
 ax.set_ylabel("Bolometric luminosity (erg s$^{-1}$)")
 ```
 
+<p align="center">
+  <img src="docs/lightcurve_bol.png" alt="Bolometric light curve example">
+</p>
+
 Multi-band light curve:
 
 ```python
@@ -223,6 +209,10 @@ ax.set_xlabel("Observer time (days)")
 ax.set_ylabel("Vega magnitude")
 ax.legend()
 ```
+
+<p align="center">
+  <img src="docs/lightcurve_multiband.png" alt="Multi-band light curve example">
+</p>
 
 ### Fit Data
 
