@@ -352,6 +352,7 @@ photometry, extinction handling, and result-object accessors.
 - [Example data](examples/data)
 - [Multi-band photometry design](docs/multiband_photometry_design.md)
 - [Model parameter reference](docs/model_parameter_reference.tex)
+- [Model citation guide](docs/model_citations.md)
 - [Physical regression and convergence tests](examples/physical_regression_and_convergence_tests.ipynb)
 
 ---
@@ -385,5 +386,9 @@ archivePrefix = {arXiv},
        eprint = {2505.13825}
 }
 ```
+
+Different physical models require different model-method citations. See the
+[model citation guide](docs/model_citations.md) for the recommended citation
+set for `nickel`, `magnetar`, `magnetar_ni`, and `csm`.
 
 Some code and tutorial content were generated with assistance from Codex.

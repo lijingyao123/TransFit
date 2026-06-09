@@ -1,4 +1,4 @@
-# TransFit 简体中文版
+# TransFit
 
 <p align="right">
   <strong>语言：</strong><a href="../README.md">English</a> | 简体中文
@@ -346,6 +346,7 @@ python -m pytest -q
 - [示例数据](../examples/data)
 - [多波段测光设计](multiband_photometry_design.md)
 - [模型参数参考](model_parameter_reference.tex)
+- [模型引用指南](model_citations.md)
 - [物理回归与收敛测试](../examples/physical_regression_and_convergence_tests.ipynb)
 
 ---
@@ -379,5 +380,9 @@ archivePrefix = {arXiv},
        eprint = {2505.13825}
 }
 ```
+
+不同物理模型需要同时引用不同的模型方法论文。请查看
+[模型引用指南](model_citations.md)，根据你使用的 `nickel`、`magnetar`、
+`magnetar_ni` 或 `csm` 模型选择对应引用。
 
 部分代码与教程内容由 Codex 协助生成。
