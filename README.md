@@ -303,10 +303,19 @@ tf.lightcurve_bol(model=..., params=..., z=..., t_max_days=...)
 tf.lightcurve_multiband(model=..., params=..., z=..., distance_modulus=..., filters=..., bands=...)
 
 tf.fit_bol(data=..., model=..., z=..., priors=..., fixed=...)
-tf.fit_multiband(data=..., model=..., z=..., distance_modulus=..., filters=..., priors=..., fixed=...)
+tf.fit_multiband(data=..., model=..., z=..., distance_modulus=..., filters=..., priors=..., fixed=..., sed=...)
 
 tf.save(res, path=None)
 tf.load(path, trusted=False)
+```
+
+Multi-band forward modeling and fitting accept a replaceable SED object. The
+built-in choices are:
+
+```python
+from transfit.modules.sed import BlackbodySED, CutoffBlackbodySED
+
+sed = CutoffBlackbodySED(cutoff_wavelength_A=3000.0, uv_slope=2.0)
 ```
 
 Advanced interpolation helpers are also available when you need model values at
