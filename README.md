@@ -123,7 +123,7 @@ tf.save(res, "mcmc_out/nickel_bol_demo.npz")
 ## Documentation
 
 - [Tutorial notebook](examples/tutorial.ipynb)
-- [API and parameter reference](docs/api_reference.tex)
+- [API and parameter reference](docs/api_reference.md)
 - [Model citation guide](docs/model_citations.md)
 - [Chinese README](docs/README_chinese.md)
 

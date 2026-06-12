@@ -120,7 +120,7 @@ tf.save(res, "mcmc_out/nickel_bol_demo.npz")
 ## 文档
 
 - [教程 notebook](../examples/tutorial.ipynb)
-- [API 和参数参考](api_reference.tex)
+- [API 和参数参考](api_reference.md)
 - [模型引用指南](model_citations.md)
 - [英文 README](../README.md)
 
