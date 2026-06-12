@@ -14,7 +14,7 @@ from .modules.interp import interp_fit
 from .modules.labels import normalize_band_label
 from .modules.likelihood import gaussian_lnlike_with_nuisance
 from .modules.photometry import evaluate_multiband_observer_output, validate_observation_mode
-from .modules.sed import BlackbodySED
+from .modules.sed import BlackbodySED, sed_to_dict
 from .model_registry import canonical_model_name, forward_param_defaults
 from .samplers import FitResult, run_emcee, run_zeus, run_dynesty
 from .priors import MixedBoundsPrior, build_bounds
@@ -1594,6 +1594,7 @@ def fit_multiband(
         sampler_kwargs=sampler_kwargs,
     )
 
+    sed_config = sed_to_dict(sed)
     meta.update(
         dict(
             model=model,
@@ -1610,7 +1611,8 @@ def fit_multiband(
                 [n for n, log_flag in zip(names_samp, log_flags_samp) if log_flag]
             ),
             likelihood=_fit_likelihood_name(nuisance_cfgs),
-            sed=sed.__class__.__name__,
+            sed=sed_config["name"],
+            sed_config=sed_config,
             interp_fill_fit=interp_fill_fit,
             model_kwargs=model_kwargs_pred,
             t_max_days_policy=tmax_meta,

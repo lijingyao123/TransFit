@@ -28,7 +28,7 @@ from transfit.modules.likelihood import (
 )
 from transfit.modules.magnitudes import fnu_grid_to_vega_mag_grid
 from transfit.modules.photometry import evaluate_multiband_observer_output
-from transfit.modules.sed import BlackbodySED, CutoffBlackbodySED
+from transfit.modules.sed import BlackbodySED, CutoffBlackbodySED, sed_from_dict, sed_to_dict
 from transfit.priors import MixedBoundsPrior, UniformBoundsPrior
 from transfit.samplers import run_emcee, run_zeus
 
@@ -805,6 +805,29 @@ def test_cutoff_blackbody_suppresses_only_short_wavelength_flux():
     assert np.allclose(f_cut[1], f_bb[1])
 
 
+def test_builtin_sed_config_roundtrips_cutoff_blackbody():
+    sed = CutoffBlackbodySED(
+        cutoff_wavelength_A=2500.0,
+        uv_slope=3.0,
+        min_factor=0.2,
+        Tmin=2.0,
+        Rmin=3.0,
+    )
+
+    cfg = sed_to_dict(sed)
+    restored = sed_from_dict(cfg)
+
+    assert cfg["name"] == "CutoffBlackbodySED"
+    assert cfg["builtin"] is True
+    assert cfg["params"]["cutoff_wavelength_A"] == pytest.approx(2500.0)
+    assert isinstance(restored, CutoffBlackbodySED)
+    assert restored.cutoff_wavelength_A == pytest.approx(2500.0)
+    assert restored.uv_slope == pytest.approx(3.0)
+    assert restored.min_factor == pytest.approx(0.2)
+    assert restored.Tmin == pytest.approx(2.0)
+    assert restored.Rmin == pytest.approx(3.0)
+
+
 def test_fit_multiband_accepts_custom_sed(monkeypatch):
     class HalfFluxSED(BlackbodySED):
         def fnu(self, *args, **kwargs):
@@ -846,6 +869,59 @@ def test_fit_multiband_accepts_custom_sed(monkeypatch):
 
     assert res.param_names == []
     assert res.meta["sed"] == "HalfFluxSED"
+    assert res.meta["sed_config"]["name"] == "HalfFluxSED"
+    assert res.meta["sed_config"]["builtin"] is False
+
+    with pytest.raises(ValueError, match="Pass the original SED object"):
+        tf.plot.fit_multiband(res, data, n_t=5)
+
+
+def test_plot_fit_multiband_reuses_saved_cutoff_sed(monkeypatch):
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        assert list(prior.param_names) == []
+        sample = np.empty(0, dtype=float)
+        logp = lnprob(sample)
+        assert np.isfinite(logp)
+        return sample.reshape(1, 0), np.array([logp], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    data = tf.MultiBandData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        band=np.array(["B", "B", "B"], dtype=object),
+        y=np.array([20.0, 20.2, 20.5], float),
+        yerr=np.array([0.2, 0.2, 0.2], float),
+    )
+    fixed = dict(PARAMS_NI)
+    fixed["t_shift"] = 0.0
+    sed = CutoffBlackbodySED(2500.0, 3.0, min_factor=0.2)
+
+    res = tf.fit_multiband(
+        data=data,
+        model="nickel",
+        z=0.001728,
+        distance_modulus=MU_7P5_MPC,
+        filters={"B": "johnson_cousins.B"},
+        y_kind="mag",
+        fixed=fixed,
+        sed=sed,
+        model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 8.0},
+    )
+
+    seen = {}
+
+    def fake_predict_multiband(**kwargs):
+        seen["sed"] = kwargs.get("sed")
+        return np.zeros_like(np.asarray(kwargs["t_days"], float))
+
+    monkeypatch.setattr(api, "predict_multiband", fake_predict_multiband)
+
+    fig = tf.plot.fit_multiband(res, data, n_t=5)
+    assert fig is not None
+    assert isinstance(seen["sed"], CutoffBlackbodySED)
+    assert seen["sed"].cutoff_wavelength_A == pytest.approx(2500.0)
+    assert seen["sed"].uv_slope == pytest.approx(3.0)
+    assert seen["sed"].min_factor == pytest.approx(0.2)
 
 
 def test_observation_likelihood_dispatch_is_explicit():
