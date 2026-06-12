@@ -33,52 +33,52 @@ should use the canonical names.
 
 | Parameter | Meaning and unit |
 |---|---|
-| `M_ej` | ejecta mass, \(M_\odot\) |
-| `v_ej` | ejecta velocity, \(10^9\,{\rm cm\,s^{-1}}\) |
-| `E_Th_in` | initial thermal energy, \(10^{49}\,{\rm erg}\) |
-| `M_Ni` | nickel mass, \(M_\odot\) |
-| `R_0` | initial radius, \(R_\odot\) |
+| `M_ej` | ejecta mass, $M_\odot$ |
+| `v_ej` | ejecta velocity, $10^9\,{\rm cm\,s^{-1}}$ |
+| `E_Th_in` | initial thermal energy, $10^{49}\,{\rm erg}$ |
+| `M_Ni` | nickel mass, $M_\odot$ |
+| `R_0` | initial radius, $R_\odot$ |
 | `x_Ni` | nickel mixing coordinate, dimensionless |
-| `kappa` | optical opacity, \({\rm cm^2\,g^{-1}}\) |
-| `kappa_gamma` | gamma-ray opacity, \({\rm cm^2\,g^{-1}}\) |
+| `kappa` | optical opacity, ${\rm cm^2\,g^{-1}}$ |
+| `kappa_gamma` | gamma-ray opacity, ${\rm cm^2\,g^{-1}}$ |
 | `T_floor` | temperature floor, K |
 
 ### `magnetar`
 
 | Parameter | Meaning and unit |
 |---|---|
-| `M_ej` | ejecta mass, \(M_\odot\) |
-| `v_ej` | ejecta velocity, \(10^9\,{\rm cm\,s^{-1}}\) |
-| `E_Th_in` | initial thermal energy, \(10^{49}\,{\rm erg}\) |
+| `M_ej` | ejecta mass, $M_\odot$ |
+| `v_ej` | ejecta velocity, $10^9\,{\rm cm\,s^{-1}}$ |
+| `E_Th_in` | initial thermal energy, $10^{49}\,{\rm erg}$ |
 | `P_ms` | magnetar spin period, ms |
-| `B14` | magnetar dipole field, \(10^{14}\,{\rm G}\) |
-| `R_0` | initial radius, \(R_\odot\) |
-| `kappa` | optical opacity, \({\rm cm^2\,g^{-1}}\) |
-| `kappa_gamma` | gamma-ray opacity, \({\rm cm^2\,g^{-1}}\) |
+| `B14` | magnetar dipole field, $10^{14}\,{\rm G}$ |
+| `R_0` | initial radius, $R_\odot$ |
+| `kappa` | optical opacity, ${\rm cm^2\,g^{-1}}$ |
+| `kappa_gamma` | gamma-ray opacity, ${\rm cm^2\,g^{-1}}$ |
 | `T_floor` | temperature floor, K |
 
 ### `magnetar_ni`
 
 | Parameter | Meaning and unit |
 |---|---|
-| `M_ej` | ejecta mass, \(M_\odot\) |
-| `v_ej` | ejecta velocity, \(10^9\,{\rm cm\,s^{-1}}\) |
+| `M_ej` | ejecta mass, $M_\odot$ |
+| `v_ej` | ejecta velocity, $10^9\,{\rm cm\,s^{-1}}$ |
 | `P_ms` | magnetar spin period, ms |
-| `B14` | magnetar dipole field, \(10^{14}\,{\rm G}\) |
-| `M_Ni` | nickel mass, \(M_\odot\) |
-| `kappa` | optical opacity, \({\rm cm^2\,g^{-1}}\) |
-| `kappa_gamma` | gamma-ray opacity, \({\rm cm^2\,g^{-1}}\) |
+| `B14` | magnetar dipole field, $10^{14}\,{\rm G}$ |
+| `M_Ni` | nickel mass, $M_\odot$ |
+| `kappa` | optical opacity, ${\rm cm^2\,g^{-1}}$ |
+| `kappa_gamma` | gamma-ray opacity, ${\rm cm^2\,g^{-1}}$ |
 | `T_floor` | temperature floor, K |
 
 ### `csm`
 
 | Parameter | Meaning and unit |
 |---|---|
-| `M_ej` | ejecta mass, \(M_\odot\) |
-| `E_sn` | explosion energy, \(10^{51}\,{\rm erg}\) |
-| `M_csm` | circumstellar-material mass, \(M_\odot\) |
-| `R_csm_out` | outer CSM radius, \(R_\odot\) |
-| `kappa` | optical opacity, \({\rm cm^2\,g^{-1}}\) |
+| `M_ej` | ejecta mass, $M_\odot$ |
+| `E_sn` | explosion energy, $10^{51}\,{\rm erg}$ |
+| `M_csm` | circumstellar-material mass, $M_\odot$ |
+| `R_csm_out` | outer CSM radius, $R_\odot$ |
+| `kappa` | optical opacity, ${\rm cm^2\,g^{-1}}$ |
 | `s` | CSM density power-law index |
 | `eps_sh` | shock radiation efficiency |
 | `T_floor` | temperature floor, K |
@@ -107,7 +107,7 @@ tf.BolometricData(t_days, y, yerr, mask=None)
 | Field | Meaning |
 |---|---|
 | `t_days` | observer-frame time in days |
-| `y` | bolometric luminosity, \({\rm erg\,s^{-1}}\) |
+| `y` | bolometric luminosity, ${\rm erg\,s^{-1}}$ |
 | `yerr` | one-sigma uncertainty in the same units as `y` |
 | `mask` | optional boolean mask; only masked-in points are used |
 
@@ -235,7 +235,7 @@ parameter. It may be fixed or sampled through `fixed` and `priors`.
 | Observation space | Meaning |
 |---|---|
 | `y_kind="mag"` | additional magnitude scatter |
-| `y_kind="flux"` | converted to fractional flux scatter using \(0.4\ln(10)\sigma_{\rm int}\) |
+| `y_kind="flux"` | converted to fractional flux scatter using $0.4\ln(10)\sigma_{\rm int}$ |
 
 ## Keyword Dictionaries
 
