@@ -3,15 +3,13 @@
 
 import numpy as np
 import numba  # Numba JIT
-from astropy.cosmology import Planck15 as cosmo
-import astropy.units as u
 from transfit.modules.interp import interp_fit
 
 # unified constants (CGS, Numba-friendly)
 from transfit.constants import (
     PI, C_LIGHT, DAY,
     M_SUN, R_SUN,
-    SIGMA_SB, H_PLANCK, K_BOLTZ,
+    SIGMA_SB,
     EPSILON_NI, EPSILON_CO, TAU_NI, TAU_CO,
 )
 
@@ -286,21 +284,3 @@ class NickelModel:
             yscale="log10",
             fill="edge",
         )
-
-    def M_ab(self, t_obs, theta, nu_obs, z):
-        nu_obs = nu_obs * (1.0 + z)
-        lum_dist = cosmo.luminosity_distance(z)
-        DL_z = lum_dist.to(u.cm).value
-
-        t_s, L_bol_values, T_for_calc, R_outer = self.calculate_light_curve(theta)
-        t_obs_days = np.asarray(t_obs, float)
-        t_obs_grid_days = (t_s * (1.0 + z)) / DAY
-
-        x_obs = H_PLANCK * nu_obs / (K_BOLTZ * T_for_calc)
-        B_nu = 2.0 * H_PLANCK * nu_obs**3 / (C_LIGHT**2) / (np.exp(x_obs) - 1.0)
-        L_nu = 4.0 * PI * PI * R_outer**2 * B_nu
-        F_nu = ((1.0 + z) * L_nu) / (4.0 * PI * (DL_z**2))
-
-        M_ab_values = -2.5 * np.log10(F_nu) - 48.6
-        M_ab_obs = np.interp(t_obs_days, t_obs_grid_days, M_ab_values, left=M_ab_values[0], right=M_ab_values[-1])
-        return M_ab_obs

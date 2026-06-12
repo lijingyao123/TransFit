@@ -14,7 +14,7 @@ from .modules.interp import interp_fit
 from .modules.labels import normalize_band_label
 from .modules.likelihood import gaussian_lnlike_with_nuisance
 from .modules.photometry import evaluate_multiband_observer_output, validate_observation_mode
-from .modules.sed import BlackbodySED
+from .modules.sed import BlackbodySED, sed_to_dict
 from .model_registry import canonical_model_name, forward_param_defaults
 from .samplers import FitResult, run_emcee, run_zeus, run_dynesty
 from .priors import MixedBoundsPrior, build_bounds
@@ -1182,6 +1182,7 @@ class _MultibandPredictor:
     y_kind: str
     mag_system: str
     extinction_spec: Optional[ExtinctionSpec]
+    sed: Any
     interp_fill_fit: str
     model_kwargs_pred: Dict[str, Any]
 
@@ -1197,6 +1198,7 @@ class _MultibandPredictor:
             y_kind=self.y_kind,
             mag_system=self.mag_system,
             extinction=self.extinction_spec,
+            sed=self.sed,
             interp_fill=self.interp_fill_fit,
             **self.model_kwargs_pred,
         )
@@ -1476,6 +1478,7 @@ def fit_multiband(
     priors: Optional[Dict[str, Any]] = None,
     fixed: Optional[Dict[str, float]] = None,
     sampler: str = "emcee",
+    sed=None,
     sampler_kwargs: Optional[Dict[str, Any]] = None,
     model_kwargs: Optional[Dict[str, Any]] = None,
 ) -> FitResult:
@@ -1491,6 +1494,8 @@ def fit_multiband(
     )
     sampler_kwargs = dict(sampler_kwargs or {})
     model_kwargs = dict(model_kwargs or {})
+    if sed is None:
+        sed = BlackbodySED()
     model_kwargs_pred, interp_fill_fit = _split_fit_model_kwargs(model_kwargs)
     data = _apply_data_filter(data)
 
@@ -1565,6 +1570,7 @@ def fit_multiband(
         y_kind=ctx.y_kind,
         mag_system=ctx.mag_system,
         extinction_spec=extinction_spec,
+        sed=sed,
         interp_fill_fit=interp_fill_fit,
         model_kwargs_pred=model_kwargs_pred,
     )
@@ -1588,6 +1594,7 @@ def fit_multiband(
         sampler_kwargs=sampler_kwargs,
     )
 
+    sed_config = sed_to_dict(sed)
     meta.update(
         dict(
             model=model,
@@ -1604,6 +1611,8 @@ def fit_multiband(
                 [n for n, log_flag in zip(names_samp, log_flags_samp) if log_flag]
             ),
             likelihood=_fit_likelihood_name(nuisance_cfgs),
+            sed=sed_config["name"],
+            sed_config=sed_config,
             interp_fill_fit=interp_fill_fit,
             model_kwargs=model_kwargs_pred,
             t_max_days_policy=tmax_meta,

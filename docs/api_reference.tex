@@ -1,0 +1,258 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{amsmath}
+\usepackage{enumitem}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue
+}
+
+\title{TransFit API and Parameter Reference}
+\author{TransFit Developers}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Scope}
+
+This document describes the stable public Python interface of TransFit.  The
+README and tutorial intentionally show only minimal examples; this file is the
+place for argument meanings, model parameters, result fields, and advanced
+options.
+
+All public time inputs and outputs use observer-frame days.  The physical
+models are solved internally in rest-frame time and converted back to the
+observer frame at the API boundary.
+
+\section{Public entry points}
+
+\begin{itemize}[leftmargin=*]
+  \item Data containers:
+    \texttt{BolometricData} and \texttt{MultiBandData}.
+  \item Model inspection:
+    \texttt{model\_param\_names(model)} and
+    \texttt{param\_template(model)}.
+  \item Forward light curves:
+    \texttt{lightcurve\_bol(...)} and
+    \texttt{lightcurve\_multiband(...)}.
+  \item Interpolated predictions:
+    \texttt{predict\_bol(...)} and \texttt{predict\_multiband(...)}.
+  \item Fitting:
+    \texttt{fit\_bol(...)} and \texttt{fit\_multiband(...)}.
+  \item Result I/O:
+    \texttt{save(res, path=None)} and
+    \texttt{load(path, trusted=False)}.
+  \item Plotting:
+    \texttt{transfit.plot.fit\_bol},
+    \texttt{transfit.plot.fit\_multiband}, and
+    \texttt{transfit.plot.corner}.
+\end{itemize}
+
+\section{Model names and parameters}
+
+Accepted canonical model names are \texttt{nickel}, \texttt{magnetar},
+\texttt{magnetar\_ni}, and \texttt{csm}.  Some aliases are accepted for
+backward compatibility, but new scripts should use the canonical names.
+
+\begin{longtable}{lll}
+\toprule
+Model & Parameter & Meaning and unit \\
+\midrule
+\endhead
+\texttt{nickel} & \texttt{M\_ej} & ejecta mass, $M_\odot$ \\
+ & \texttt{v\_ej} & ejecta velocity, $10^9\,{\rm cm\,s^{-1}}$ \\
+ & \texttt{E\_Th\_in} & initial thermal energy, $10^{49}\,{\rm erg}$ \\
+ & \texttt{M\_Ni} & nickel mass, $M_\odot$ \\
+ & \texttt{R\_0} & initial radius, $R_\odot$ \\
+ & \texttt{x\_Ni} & nickel mixing coordinate, dimensionless \\
+ & \texttt{kappa} & optical opacity, ${\rm cm^2\,g^{-1}}$ \\
+ & \texttt{kappa\_gamma} & gamma-ray opacity, ${\rm cm^2\,g^{-1}}$ \\
+ & \texttt{T\_floor} & temperature floor, K \\
+\midrule
+\texttt{magnetar} & \texttt{M\_ej} & ejecta mass, $M_\odot$ \\
+ & \texttt{v\_ej} & ejecta velocity, $10^9\,{\rm cm\,s^{-1}}$ \\
+ & \texttt{E\_Th\_in} & initial thermal energy, $10^{49}\,{\rm erg}$ \\
+ & \texttt{P\_ms} & magnetar spin period, ms \\
+ & \texttt{B14} & magnetar dipole field, $10^{14}\,{\rm G}$ \\
+ & \texttt{R\_0} & initial radius, $R_\odot$ \\
+ & \texttt{kappa} & optical opacity, ${\rm cm^2\,g^{-1}}$ \\
+ & \texttt{kappa\_gamma} & gamma-ray opacity, ${\rm cm^2\,g^{-1}}$ \\
+ & \texttt{T\_floor} & temperature floor, K \\
+\midrule
+\texttt{magnetar\_ni} & \texttt{M\_ej} & ejecta mass, $M_\odot$ \\
+ & \texttt{v\_ej} & ejecta velocity, $10^9\,{\rm cm\,s^{-1}}$ \\
+ & \texttt{P\_ms} & magnetar spin period, ms \\
+ & \texttt{B14} & magnetar dipole field, $10^{14}\,{\rm G}$ \\
+ & \texttt{M\_Ni} & nickel mass, $M_\odot$ \\
+ & \texttt{kappa} & optical opacity, ${\rm cm^2\,g^{-1}}$ \\
+ & \texttt{kappa\_gamma} & gamma-ray opacity, ${\rm cm^2\,g^{-1}}$ \\
+ & \texttt{T\_floor} & temperature floor, K \\
+\midrule
+\texttt{csm} & \texttt{M\_ej} & ejecta mass, $M_\odot$ \\
+ & \texttt{E\_sn} & explosion energy, $10^{51}\,{\rm erg}$ \\
+ & \texttt{M\_csm} & circumstellar-material mass, $M_\odot$ \\
+ & \texttt{R\_csm\_out} & outer CSM radius, $R_\odot$ \\
+ & \texttt{kappa} & optical opacity, ${\rm cm^2\,g^{-1}}$ \\
+ & \texttt{s} & CSM density power-law index \\
+ & \texttt{eps\_sh} & shock radiation efficiency \\
+ & \texttt{T\_floor} & temperature floor, K \\
+\bottomrule
+\end{longtable}
+
+The optional fit parameter \texttt{t\_shift} is appended when
+\texttt{include\_t\_shift=True} or during fitting.  It is constrained to be
+non-negative.  In fitting, the model is evaluated at
+\[
+  t_{\rm eval}=t_{\rm obs}+t_{\rm shift}.
+\]
+Thus a positive \texttt{t\_shift} means that the model start is earlier than
+the user's observational zero point.
+
+\section{Data containers}
+
+\subsection{\texttt{BolometricData}}
+
+\texttt{BolometricData(t\_days, y, yerr, mask=None)} stores bolometric
+observations.  \texttt{t\_days} is observer-frame time in days, \texttt{y} is
+bolometric luminosity in ${\rm erg\,s^{-1}}$, and \texttt{yerr} is the
+one-sigma uncertainty in the same units.  Unmasked luminosities and
+uncertainties must be positive and finite for fitting.
+
+\subsection{\texttt{MultiBandData}}
+
+\texttt{MultiBandData(t\_days, band, y, yerr, mask=None)} stores multi-band
+photometry.  \texttt{band} gives the band label for each point.  The meaning
+of \texttt{y} and \texttt{yerr} is controlled by \texttt{y\_kind}: magnitudes
+for \texttt{"mag"} and flux density for \texttt{"flux"}.
+
+\section{Forward and prediction calls}
+
+The bolometric forward call is:
+\begin{quote}
+\texttt{lightcurve\_bol(model, params, z, t\_max\_days=150.0, solver\_kwargs=None)}.
+\end{quote}
+It returns \texttt{BolometricLC} with \texttt{t\_days}, \texttt{Lbol},
+\texttt{Teff}, and \texttt{Rph}.
+
+The multi-band forward call is:
+\begin{quote}
+\texttt{lightcurve\_multiband(model, params, z, distance\_modulus, filters, bands, ...)}.
+\end{quote}
+It returns \texttt{MultiBandLC} with \texttt{t\_days}, \texttt{bands}, and a
+dictionary \texttt{y[band]}.
+
+\texttt{predict\_bol} and \texttt{predict\_multiband} evaluate the same models
+at user-supplied observer-frame times.  \texttt{interp\_fill} may be
+\texttt{"nan"}, \texttt{"raise"}, or \texttt{"edge"} for prediction calls.
+During fitting, \texttt{"edge"} is rejected to avoid silently extrapolating
+outside the model grid.
+
+\section{Fitting calls}
+
+The fitting entry points are:
+\begin{quote}
+\texttt{fit\_bol(data, model, z, priors=None, fixed=None, sampler="emcee", ...)}
+\end{quote}
+and
+\begin{quote}
+\texttt{fit\_multiband(data, model, z, distance\_modulus, filters, priors=None, fixed=None, ...)}.
+\end{quote}
+
+\texttt{priors} maps parameter names to bounds.  A linear uniform prior uses
+\texttt{(lo, hi)}.  A base-10 log-uniform prior uses
+\texttt{("log10", lo, hi)}, where \texttt{lo} and \texttt{hi} are bounds in
+log10 space.  \texttt{fixed} maps parameter names to fixed values.  Any model
+parameter not supplied in \texttt{fixed} is sampled using its default bounds or
+the bounds supplied in \texttt{priors}.
+
+\texttt{sigma\_int} is a likelihood nuisance parameter, not a physical model
+parameter.  It may be fixed or sampled through \texttt{fixed} and
+\texttt{priors}.  In magnitude space it is an additional magnitude scatter.
+In flux space it is converted to a fractional flux scatter using
+$0.4\ln(10)\sigma_{\rm int}$.
+
+\section{Keyword dictionaries}
+
+\subsection{\texttt{sampler\_kwargs}}
+
+For \texttt{emcee} and \texttt{zeus}, common keys are \texttt{nwalkers},
+\texttt{nsteps}, \texttt{burnin}, \texttt{thin}, \texttt{seed},
+\texttt{init}, \texttt{pool}, and \texttt{progress}.  For \texttt{dynesty},
+common keys include \texttt{nlive}, \texttt{sample}, \texttt{bound},
+\texttt{dlogz}, \texttt{maxiter}, \texttt{maxcall}, \texttt{seed},
+\texttt{progress}, \texttt{nsamples}, \texttt{add\_live}, \texttt{pool}, and
+\texttt{queue\_size}.
+
+\subsection{\texttt{model\_kwargs}}
+
+Fit-time model options are passed through \texttt{model\_kwargs}.  Supported
+public keys include \texttt{t\_max\_days}, \texttt{interp\_fill}, and
+\texttt{solver\_kwargs}.  \texttt{t\_max\_days} is observer-frame days.  If it
+is omitted, TransFit chooses a value large enough to cover the data and the
+allowed \texttt{t\_shift} range.
+
+\subsection{\texttt{solver\_kwargs}}
+
+\texttt{solver\_kwargs} is the advanced numerical-grid interface.  It accepts
+\texttt{Nx} and \texttt{Ny}; both must be positive integers.  The default is
+\texttt{\{Nx: 100, Ny: 1000\}}.  Beginner examples intentionally do not expose
+these controls.
+
+\section{SED choices}
+
+The default multi-band SED is \texttt{BlackbodySED}.  A built-in ultraviolet
+cutoff variant is available as \texttt{CutoffBlackbodySED}:
+\[
+  L_\nu^{\rm cutoff}=C(\lambda_{\rm rest})\,L_\nu^{\rm BB}.
+\]
+For \texttt{CutoffBlackbodySED(cutoff\_wavelength\_A, uv\_slope,
+min\_factor)}, the multiplicative factor is
+\[
+C(\lambda)=
+\begin{cases}
+1, & \lambda \ge \lambda_{\rm cut},\\
+\max\left[f_{\rm min},\left(\lambda/\lambda_{\rm cut}\right)^{a}\right],
+& \lambda < \lambda_{\rm cut},
+\end{cases}
+\]
+where $\lambda_{\rm cut}$ is \texttt{cutoff\_wavelength\_A},
+$a$ is \texttt{uv\_slope}, and $f_{\rm min}$ is \texttt{min\_factor}.
+Set \texttt{min\_factor=0} for a pure power-law cutoff.
+
+\section{FitResult fields}
+
+\texttt{fit\_bol} and \texttt{fit\_multiband} return a \texttt{FitResult}.
+The main public fields are:
+
+\begin{itemize}[leftmargin=*]
+  \item \texttt{res.best\_params}: rounded best-fit parameter dictionary.
+  \item \texttt{res.best\_params\_raw}: full-precision best-fit dictionary.
+  \item \texttt{res.median\_params}: posterior median dictionary.
+  \item \texttt{res.best\_fit}: compact record with parameters, errors,
+    best log probability, and best sample.
+  \item \texttt{res.best\_index}: index of the best posterior sample.
+  \item \texttt{res.best\_log\_prob}: best log posterior value.
+  \item \texttt{res.best\_sample}: raw best sample vector in
+    \texttt{res.param\_names} order.
+  \item \texttt{res.samples}: flattened posterior samples.
+  \item \texttt{res.log\_prob}: log posterior values.
+  \item \texttt{res.meta}: sampler, prior, model, SED, and context metadata.
+\end{itemize}
+
+\section{Citation rules}
+
+All model use should cite the TransFit software paper.  The \texttt{csm} model
+should additionally cite the TransFit-CSM paper.  See
+\texttt{docs/model\_citations.md} for BibTeX entries and model-specific
+guidance.
+
+\end{document}

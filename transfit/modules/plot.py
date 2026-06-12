@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 from .extinction import extinction_from_dict
 from .filters import filters_from_dict
 from .io import _ctx_to_dict, _validate_ctx_dict
+from .sed import sed_from_dict
 
 
 # -----------------------------------------------------------------------------
@@ -182,6 +183,14 @@ def _get_model_name(loaded: Dict[str, Any], fallback: Optional[str] = None) -> s
     if fallback:
         return str(fallback)
     raise ValueError("Cannot determine model name; pass model=... to fit_*().")
+
+
+def _plot_sed_from_meta(loaded: Dict[str, Any]):
+    meta = dict(loaded.get("meta", {}) or {})
+    config = meta.get("sed_config")
+    if config is None:
+        return None
+    return sed_from_dict(dict(config))
 
 
 def _prepare_plot_model_kwargs(model_kwargs: Dict[str, Any], required_t_max_days: float) -> Dict[str, Any]:
@@ -560,6 +569,7 @@ def fit_multiband(
     *,
     model: Optional[str] = None,
     model_kwargs: Optional[Dict[str, Any]] = None,
+    sed=None,
     # plotting controls
     t_pad: float = 50.0,
     n_t: int = 800,
@@ -600,6 +610,7 @@ def fit_multiband(
     y_kind = str(y_kind).lower()
     mag_system = str(mag_system).lower()
     model_name = _get_model_name(loaded, fallback=model)
+    plot_sed = sed if sed is not None else _plot_sed_from_meta(loaded)
 
     samples = np.asarray(loaded["samples"], float)
     logp = loaded.get("log_prob", None)
@@ -661,6 +672,7 @@ def fit_multiband(
                 y_kind=y_kind,
                 mag_system=mag_system,
                 extinction=extinction,
+                sed=plot_sed,
                 interp_fill=interp_fill_model,
                 **model_kwargs_eval,
             )
@@ -693,6 +705,7 @@ def fit_multiband(
                             y_kind=y_kind,
                             mag_system=mag_system,
                             extinction=extinction,
+                            sed=plot_sed,
                             interp_fill=interp_fill_model,
                             **model_kwargs_eval,
                         )

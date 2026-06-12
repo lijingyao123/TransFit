@@ -4,8 +4,6 @@
 import numpy as np
 import numba
 from scipy.integrate import solve_ivp
-from astropy.cosmology import Planck15 as cosmo
-import astropy.units as u
 
 try:
     from transfit.modules.interp import interp_fit
@@ -35,8 +33,6 @@ DAY = 86400.0
 M_SUN = 1.98847e33
 R_SUN = 6.957e10
 SIGMA_SB = 5.670374419e-5
-H_PLANCK = 6.62607015e-27
-K_BOLTZ = 1.380649e-16
 
 DEFAULT_R_CSM_IN_RSUN = 100.0
 DEFAULT_EJECTA_N = 10.0
@@ -67,6 +63,8 @@ def _build_params(
     rtol_ode,
     atol_ode,
     shock_max_step,
+    shock_ode_solver,
+    shock_rk_dx,
     shock_kernel_cells,
     shock_kernel_width_Rsun,
 ):
@@ -127,6 +125,8 @@ def _build_params(
         "rtol_ode": float(rtol_ode),
         "atol_ode": float(atol_ode),
         "shock_max_step": float(shock_max_step),
+        "shock_ode_solver": str(shock_ode_solver).strip().lower(),
+        "shock_rk_dx": float(shock_rk_dx),
         "shock_kernel_cells": int(shock_kernel_cells),
         "shock_kernel_width": float(shock_kernel_width_Rsun) * R_SUN,
     }
@@ -137,7 +137,7 @@ def _build_params(
 
 def _validate_params(p):
     for name, value in p.items():
-        if name in {"N_x", "N_t", "shock_kernel_cells"}:
+        if name in {"N_x", "N_t", "shock_kernel_cells", "shock_ode_solver"}:
             continue
         if not np.isfinite(float(value)):
             raise ValueError(f"{name} must be finite.")
@@ -163,6 +163,10 @@ def _validate_params(p):
         raise ValueError("t_max_days must be positive.")
     if not (p["shock_max_step"] > 0.0):
         raise ValueError("shock_max_step must be positive.")
+    if p["shock_ode_solver"] not in {"numba", "scipy"}:
+        raise ValueError("shock_ode_solver must be 'numba' or 'scipy'.")
+    if not (p["shock_rk_dx"] > 0.0):
+        raise ValueError("shock_rk_dx must be positive.")
     if not (p["shock_kernel_cells"] >= 0):
         raise ValueError("shock_kernel_cells must be non-negative.")
     if not (p["shock_kernel_width"] >= 0.0):
@@ -253,7 +257,266 @@ def _shock_rhs(y_sh, state, p, scales):
     return np.array([dx_dysh, dz_dysh, dw_dysh], dtype=float)
 
 
-def _solve_shock_ode(p):
+@numba.njit(cache=True)
+def _f_rho_ej_scalar_numba(x, y_sh, w_tr, n, delta_inner):
+    y_eff = y_sh
+    if y_eff < 1.0e-12:
+        y_eff = 1.0e-12
+    x_break = w_tr * y_eff
+    if x_break <= 0.0:
+        return 0.0
+    base = x_break ** -3.0
+    ratio = x / x_break
+    if ratio < 1.0e-300:
+        ratio = 1.0e-300
+    if x < x_break:
+        return base * ratio ** (-delta_inner)
+    return base * ratio ** (-n)
+
+
+@numba.njit(cache=True)
+def _shock_rhs_x_numba(x, y_sh, z, w, s, n, delta_inner, w_tr, A1):
+    y_eff = y_sh
+    if y_eff < 1.0e-12:
+        y_eff = 1.0e-12
+    w_eff = w
+    if w_eff < 1.0e-12:
+        w_eff = 1.0e-12
+    z_eff = z
+    if z_eff < 1.0e-12:
+        z_eff = 1.0e-12
+
+    rel_speed = x / y_eff - w
+    f_ej = _f_rho_ej_scalar_numba(x, y_eff, w_tr, n, delta_inner)
+    csm_term = x ** (2.0 - s)
+    ejecta_term = A1 * x * x * f_ej
+
+    dz_dysh = ejecta_term * rel_speed + csm_term * w
+    dw_dysh = (ejecta_term * rel_speed * rel_speed - csm_term * w * w) / z_eff
+
+    dy_dx = 1.0 / w_eff
+    dz_dx = dz_dysh / w_eff
+    dw_dx = dw_dysh / w_eff
+    return dy_dx, dz_dx, dw_dx
+
+
+@numba.njit(cache=True)
+def _rk4_step_shock_x_numba(x, y, z, w, h, s, n, delta_inner, w_tr, A1):
+    k1_y, k1_z, k1_w = _shock_rhs_x_numba(x, y, z, w, s, n, delta_inner, w_tr, A1)
+    k2_y, k2_z, k2_w = _shock_rhs_x_numba(
+        x + 0.5 * h,
+        y + 0.5 * h * k1_y,
+        z + 0.5 * h * k1_z,
+        w + 0.5 * h * k1_w,
+        s,
+        n,
+        delta_inner,
+        w_tr,
+        A1,
+    )
+    k3_y, k3_z, k3_w = _shock_rhs_x_numba(
+        x + 0.5 * h,
+        y + 0.5 * h * k2_y,
+        z + 0.5 * h * k2_z,
+        w + 0.5 * h * k2_w,
+        s,
+        n,
+        delta_inner,
+        w_tr,
+        A1,
+    )
+    k4_y, k4_z, k4_w = _shock_rhs_x_numba(
+        x + h,
+        y + h * k3_y,
+        z + h * k3_z,
+        w + h * k3_w,
+        s,
+        n,
+        delta_inner,
+        w_tr,
+        A1,
+    )
+
+    y_next = y + (h / 6.0) * (k1_y + 2.0 * k2_y + 2.0 * k3_y + k4_y)
+    z_next = z + (h / 6.0) * (k1_z + 2.0 * k2_z + 2.0 * k3_z + k4_z)
+    w_next = w + (h / 6.0) * (k1_w + 2.0 * k2_w + 2.0 * k3_w + k4_w)
+    return y_next, z_next, w_next
+
+
+@numba.njit(cache=True)
+def _shock_step_error_norm(y_full, z_full, w_full, y_half, z_half, w_half, rtol, atol):
+    err_y = abs(y_half - y_full) / (atol + rtol * max(abs(y_half), abs(y_full), 1.0))
+    err_z = abs(z_half - z_full) / (atol + rtol * max(abs(z_half), abs(z_full), 1.0))
+    err_w = abs(w_half - w_full) / (atol + rtol * max(abs(w_half), abs(w_full), 1.0))
+    return max(err_y, err_z, err_w)
+
+
+@numba.njit(cache=True)
+def _shock_step_factor(err_norm):
+    if err_norm <= 1.0e-16:
+        return 5.0
+    factor = 0.9 * err_norm ** -0.2
+    if factor < 0.2:
+        return 0.2
+    if factor > 5.0:
+        return 5.0
+    return factor
+
+
+@numba.njit(cache=True)
+def _solve_shock_ode_numba_arrays(x_max, s, n, delta_inner, w_tr, A1, rk_dx, rtol, atol):
+    x0 = 0.9999
+    y0 = 1.0
+    z0 = 1.0e-3
+    w0 = 0.999
+
+    base_steps = int(np.ceil((x_max - x0) / rk_dx))
+    if base_steps < 1:
+        base_steps = 1
+    n_steps = base_steps * 8 + 1024
+    if n_steps < 2048:
+        n_steps = 2048
+    if n_steps > 1000000:
+        n_steps = 1000000
+
+    x_values = np.empty(n_steps + 1, dtype=np.float64)
+    y_values = np.empty(n_steps + 1, dtype=np.float64)
+    z_values = np.empty(n_steps + 1, dtype=np.float64)
+    w_values = np.empty(n_steps + 1, dtype=np.float64)
+
+    x_values[0] = x0
+    y_values[0] = y0
+    z_values[0] = z0
+    w_values[0] = w0
+
+    x = x0
+    y = y0
+    z = z0
+    w = w0
+
+    status = 0
+    used = 0
+    h = min(rk_dx, max((x_max - x0) * 1.0e-4, 1.0e-5))
+    min_h = max((x_max - x0) * 1.0e-14, 1.0e-12)
+
+    while x < x_max:
+        if used + 1 >= n_steps:
+            status = -2
+            break
+        if x + h > x_max:
+            h = x_max - x
+        if h <= min_h:
+            status = -3
+            break
+
+        y_full, z_full, w_full = _rk4_step_shock_x_numba(
+            x, y, z, w, h, s, n, delta_inner, w_tr, A1
+        )
+        half_h = 0.5 * h
+        y_mid, z_mid, w_mid = _rk4_step_shock_x_numba(
+            x, y, z, w, half_h, s, n, delta_inner, w_tr, A1
+        )
+        y_half, z_half, w_half = _rk4_step_shock_x_numba(
+            x + half_h,
+            y_mid,
+            z_mid,
+            w_mid,
+            half_h,
+            s,
+            n,
+            delta_inner,
+            w_tr,
+            A1,
+        )
+
+        err_norm = _shock_step_error_norm(
+            y_full, z_full, w_full, y_half, z_half, w_half, rtol, atol
+        )
+
+        if (
+            not np.isfinite(err_norm)
+            or not np.isfinite(y_half)
+            or not np.isfinite(z_half)
+            or not np.isfinite(w_half)
+            or y_half <= 0.0
+            or z_half <= 0.0
+        ):
+            h *= 0.25
+            if h <= min_h:
+                status = -1
+                break
+            continue
+
+        factor = _shock_step_factor(err_norm)
+        if err_norm > 1.0:
+            h *= factor
+            if h <= min_h:
+                status = -3
+                break
+            continue
+
+        x += h
+        y = y_half
+        z = z_half
+        w = w_half
+
+        used += 1
+        x_values[used] = x
+        y_values[used] = y
+        z_values[used] = z
+        w_values[used] = w
+
+        h *= factor
+        if h > rk_dx:
+            h = rk_dx
+
+    return status, used + 1, x_values, y_values, z_values, w_values
+
+
+def _solve_shock_ode_numba(p):
+    scales = _compute_csm_scales(p)
+    status, n_used, x_values, y_values, z_values, w_values = _solve_shock_ode_numba_arrays(
+        float(p["x_max"]),
+        float(p["s"]),
+        float(p["n"]),
+        float(p["delta_inner"]),
+        float(scales["w_tr"]),
+        float(scales["A1"]),
+        float(p["shock_rk_dx"]),
+        float(p["rtol_ode"]),
+        float(p["atol_ode"]),
+    )
+    if status < 0 or n_used < 2:
+        raise RuntimeError("Numba shock ODE failed before reaching x_sh = R_csm / R_in.")
+
+    x_values = np.asarray(x_values[:n_used], dtype=float)
+    y_values = np.asarray(y_values[:n_used], dtype=float)
+    z_values = np.asarray(z_values[:n_used], dtype=float)
+    w_values = np.asarray(w_values[:n_used], dtype=float)
+
+    y_sh_end = float(y_values[-1])
+    y_end = float(scales["y_in"] * y_sh_end)
+    t_end = float(scales["t_d"] * y_end)
+
+    return {
+        "solver": None,
+        "solver_kind": "numba",
+        "scales": scales,
+        "x_sh_grid": x_values,
+        "y_sh_grid": y_values,
+        "z_sh_grid": z_values,
+        "w_sh_grid": w_values,
+        "y_sh_end": y_sh_end,
+        "y_end": y_end,
+        "t_end": t_end,
+        "t_end_days": t_end / DAY,
+        "x_end": float(x_values[-1]),
+        "z_end": float(z_values[-1]),
+        "w_end": float(w_values[-1]),
+    }
+
+
+def _solve_shock_ode_scipy(p):
     scales = _compute_csm_scales(p)
 
     def rhs(y_sh, state):
@@ -292,6 +555,7 @@ def _solve_shock_ode(p):
 
     return {
         "solver": sol,
+        "solver_kind": "scipy",
         "scales": scales,
         "y_sh_end": y_sh_end,
         "y_end": y_end,
@@ -301,6 +565,27 @@ def _solve_shock_ode(p):
         "z_end": float(final_state[1]),
         "w_end": float(final_state[2]),
     }
+
+
+def _solve_shock_ode(p):
+    if p["shock_ode_solver"] == "scipy":
+        return _solve_shock_ode_scipy(p)
+    return _solve_shock_ode_numba(p)
+
+
+def _evaluate_shock_state(shock, y_sh_grid):
+    if shock.get("solver_kind") == "numba":
+        y_src = np.asarray(shock["y_sh_grid"], dtype=float)
+        x_src = np.asarray(shock["x_sh_grid"], dtype=float)
+        z_src = np.asarray(shock["z_sh_grid"], dtype=float)
+        w_src = np.asarray(shock["w_sh_grid"], dtype=float)
+        return np.vstack([
+            np.interp(y_sh_grid, y_src, x_src),
+            np.interp(y_sh_grid, y_src, z_src),
+            np.interp(y_sh_grid, y_src, w_src),
+        ])
+
+    return np.asarray(shock["solver"].sol(y_sh_grid), dtype=float)
 
 
 def _build_y_grid(y_start, y_end, y_max, n_steps):
@@ -329,7 +614,7 @@ def _build_expansion_profile(y_grid, shock, p, scales):
     shock_active = y_grid <= (y_end + 1.0e-14)
 
     y_sh_grid = np.clip(y_grid / scales["y_in"], 1.0, y_sh_end)
-    dense_state = np.asarray(shock["solver"].sol(y_sh_grid), dtype=float)
+    dense_state = _evaluate_shock_state(shock, y_sh_grid)
     x_sh = np.asarray(dense_state[0], dtype=float)
     z_sh = np.asarray(dense_state[1], dtype=float)
     w_sh = np.maximum(np.asarray(dense_state[2], dtype=float), 0.0)
@@ -529,14 +814,6 @@ def _photosphere(L_bol, expansion_factor, shock_active, p):
     return T_eff, R_ph, R_out
 
 
-def _planck_specific_intensity_nu(nu_hz, temperature_k):
-    temperature = np.maximum(np.asarray(temperature_k, dtype=float), 1.0e-30)
-    x = H_PLANCK * nu_hz / (K_BOLTZ * temperature)
-    x_clip = np.clip(x, 1.0e-12, 700.0)
-    intensity = 2.0 * H_PLANCK * nu_hz ** 3 / C_LIGHT ** 2 / np.expm1(x_clip)
-    return np.where(x > 700.0, 0.0, intensity)
-
-
 class CSMModel:
     """
     Pure CSM-interaction light-curve model.
@@ -588,6 +865,8 @@ class CSMModel:
         rtol_ode=1.0e-6,
         atol_ode=1.0e-8,
         shock_max_step=0.8,
+        shock_ode_solver="numba",
+        shock_rk_dx=0.05,
         shock_kernel_cells=2,
         shock_kernel_width_Rsun=0.0,
     ):
@@ -603,6 +882,8 @@ class CSMModel:
             rtol_ode,
             atol_ode,
             shock_max_step,
+            shock_ode_solver,
+            shock_rk_dx,
             shock_kernel_cells,
             shock_kernel_width_Rsun,
         )
@@ -706,19 +987,3 @@ class CSMModel:
             yscale="log10",
             fill="edge",
         )
-
-    def M_ab(self, t_obs, theta, nu_obs, z, **kwargs):
-        """Observed AB magnitude at observer-frame times in days."""
-        nu_rest = nu_obs * (1.0 + z)
-        DL_z = cosmo.luminosity_distance(z).to(u.cm).value
-
-        t_s, L_bol_values, T_eff_values, R_ph = self.calculate_light_curve(theta, **kwargs)
-        del L_bol_values
-        t_obs_days = np.asarray(t_obs, dtype=float)
-        t_obs_grid_days = (t_s * (1.0 + z)) / DAY
-
-        B_nu = _planck_specific_intensity_nu(nu_rest, T_eff_values)
-        L_nu = 4.0 * PI * PI * R_ph ** 2 * B_nu
-        F_nu = ((1.0 + z) * L_nu) / (4.0 * PI * DL_z ** 2)
-        M_ab_values = -2.5 * np.log10(np.maximum(F_nu, 1.0e-300)) - 48.6
-        return np.interp(t_obs_days, t_obs_grid_days, M_ab_values, left=M_ab_values[0], right=M_ab_values[-1])
