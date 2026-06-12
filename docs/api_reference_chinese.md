@@ -27,52 +27,52 @@ rest-frame time 中求解，并在 API 边界转换回 observer frame。
 
 | 参数 | 含义和单位 |
 |---|---|
-| `M_ej` | 抛射物质量，\(M_\odot\) |
-| `v_ej` | 抛射物速度，\(10^9\,{\rm cm\,s^{-1}}\) |
-| `E_Th_in` | 初始热能，\(10^{49}\,{\rm erg}\) |
-| `M_Ni` | 镍质量，\(M_\odot\) |
-| `R_0` | 初始半径，\(R_\odot\) |
+| `M_ej` | 抛射物质量，$M_\odot$ |
+| `v_ej` | 抛射物速度，$10^9\,{\rm cm\,s^{-1}}$ |
+| `E_Th_in` | 初始热能，$10^{49}\,{\rm erg}$ |
+| `M_Ni` | 镍质量，$M_\odot$ |
+| `R_0` | 初始半径，$R_\odot$ |
 | `x_Ni` | 镍混合位置，无量纲 |
-| `kappa` | optical opacity，\({\rm cm^2\,g^{-1}}\) |
-| `kappa_gamma` | gamma-ray opacity，\({\rm cm^2\,g^{-1}}\) |
+| `kappa` | optical opacity，${\rm cm^2\,g^{-1}}$ |
+| `kappa_gamma` | gamma-ray opacity，${\rm cm^2\,g^{-1}}$ |
 | `T_floor` | 温度下限，K |
 
 ### `magnetar`
 
 | 参数 | 含义和单位 |
 |---|---|
-| `M_ej` | 抛射物质量，\(M_\odot\) |
-| `v_ej` | 抛射物速度，\(10^9\,{\rm cm\,s^{-1}}\) |
-| `E_Th_in` | 初始热能，\(10^{49}\,{\rm erg}\) |
+| `M_ej` | 抛射物质量，$M_\odot$ |
+| `v_ej` | 抛射物速度，$10^9\,{\rm cm\,s^{-1}}$ |
+| `E_Th_in` | 初始热能，$10^{49}\,{\rm erg}$ |
 | `P_ms` | 磁星自转周期，ms |
-| `B14` | 磁星偶极磁场，\(10^{14}\,{\rm G}\) |
-| `R_0` | 初始半径，\(R_\odot\) |
-| `kappa` | optical opacity，\({\rm cm^2\,g^{-1}}\) |
-| `kappa_gamma` | gamma-ray opacity，\({\rm cm^2\,g^{-1}}\) |
+| `B14` | 磁星偶极磁场，$10^{14}\,{\rm G}$ |
+| `R_0` | 初始半径，$R_\odot$ |
+| `kappa` | optical opacity，${\rm cm^2\,g^{-1}}$ |
+| `kappa_gamma` | gamma-ray opacity，${\rm cm^2\,g^{-1}}$ |
 | `T_floor` | 温度下限，K |
 
 ### `magnetar_ni`
 
 | 参数 | 含义和单位 |
 |---|---|
-| `M_ej` | 抛射物质量，\(M_\odot\) |
-| `v_ej` | 抛射物速度，\(10^9\,{\rm cm\,s^{-1}}\) |
+| `M_ej` | 抛射物质量，$M_\odot$ |
+| `v_ej` | 抛射物速度，$10^9\,{\rm cm\,s^{-1}}$ |
 | `P_ms` | 磁星自转周期，ms |
-| `B14` | 磁星偶极磁场，\(10^{14}\,{\rm G}\) |
-| `M_Ni` | 镍质量，\(M_\odot\) |
-| `kappa` | optical opacity，\({\rm cm^2\,g^{-1}}\) |
-| `kappa_gamma` | gamma-ray opacity，\({\rm cm^2\,g^{-1}}\) |
+| `B14` | 磁星偶极磁场，$10^{14}\,{\rm G}$ |
+| `M_Ni` | 镍质量，$M_\odot$ |
+| `kappa` | optical opacity，${\rm cm^2\,g^{-1}}$ |
+| `kappa_gamma` | gamma-ray opacity，${\rm cm^2\,g^{-1}}$ |
 | `T_floor` | 温度下限，K |
 
 ### `csm`
 
 | 参数 | 含义和单位 |
 |---|---|
-| `M_ej` | 抛射物质量，\(M_\odot\) |
-| `E_sn` | 爆炸能量，\(10^{51}\,{\rm erg}\) |
-| `M_csm` | CSM 质量，\(M_\odot\) |
-| `R_csm_out` | CSM 外半径，\(R_\odot\) |
-| `kappa` | optical opacity，\({\rm cm^2\,g^{-1}}\) |
+| `M_ej` | 抛射物质量，$M_\odot$ |
+| `E_sn` | 爆炸能量，$10^{51}\,{\rm erg}$ |
+| `M_csm` | CSM 质量，$M_\odot$ |
+| `R_csm_out` | CSM 外半径，$R_\odot$ |
+| `kappa` | optical opacity，${\rm cm^2\,g^{-1}}$ |
 | `s` | CSM 密度幂律指数 |
 | `eps_sh` | shock 辐射效率 |
 | `T_floor` | 温度下限，K |
@@ -97,7 +97,7 @@ tf.BolometricData(t_days, y, yerr, mask=None)
 | 字段 | 含义 |
 |---|---|
 | `t_days` | observer-frame days |
-| `y` | bolometric luminosity，\({\rm erg\,s^{-1}}\) |
+| `y` | bolometric luminosity，${\rm erg\,s^{-1}}$ |
 | `yerr` | 与 `y` 同单位的一倍标准差误差 |
 | `mask` | 可选布尔 mask；只有 mask 选中的点会进入拟合 |
 
@@ -220,7 +220,7 @@ res = tf.fit_multiband(
 | 观测空间 | 含义 |
 |---|---|
 | `y_kind="mag"` | 额外星等 scatter |
-| `y_kind="flux"` | 用 \(0.4\ln(10)\sigma_{\rm int}\) 转换成 fractional flux scatter |
+| `y_kind="flux"` | 用 $0.4\ln(10)\sigma_{\rm int}$ 转换成 fractional flux scatter |
 
 ## 关键字参数字典
 
