@@ -376,7 +376,6 @@ loaded = tf.load(path)
 - [API 和参数参考](api_reference_chinese.md)
 - [English API reference](api_reference.md)
 - [模型引用指南](model_citations.md)
-- [英文 README](../README.md)
 
 ## 引用
 
