@@ -5,6 +5,8 @@ README and tutorial intentionally show only minimal examples; this file is the
 place for argument meanings, model parameters, result fields, and advanced
 options.
 
+Chinese version: [中文 API 和参数参考](api_reference_chinese.md).
+
 All public time inputs and outputs use **observer-frame days**. The physical
 models are solved internally in rest-frame time and converted back to the
 observer frame at the API boundary.

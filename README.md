@@ -377,7 +377,6 @@ Full details are available in [API and parameter reference](docs/api_reference.m
 
 - [Tutorial notebook](examples/tutorial.ipynb)
 - [API and parameter reference](docs/api_reference.md)
-- [中文 API 和参数参考](docs/api_reference_chinese.md)
 - [Model citation guide](docs/model_citations.md)
 
 ## Citation
