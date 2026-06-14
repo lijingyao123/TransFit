@@ -338,6 +338,10 @@ Set `min_factor=0` for a pure power-law cutoff.
 
 `fit_bol` and `fit_multiband` return a `FitResult`.
 
+If `t_shift` is sampled during fitting, it appears directly in `res.param_names`
+and in the parameter dictionaries such as `res.best_params`,
+`res.best_params_raw`, `res.median_params`, and `res.best_fit["params"]`.
+
 | Field/property | Meaning |
 |---|---|
 | `res.best_params` | rounded best-fit parameter dictionary |

@@ -128,6 +128,43 @@ def test_fit_bol_and_save_load_smoke(monkeypatch, tmp_path):
     assert loaded["fixed"]["M_ej"] == pytest.approx(PARAMS_NICKEL["M_ej"])
 
 
+def test_fit_bol_reports_sampled_t_shift(monkeypatch):
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        assert list(prior.param_names) == ["t_shift"]
+        sample = np.array([1.25], dtype=float)
+        logp = lnprob(sample)
+        assert np.isfinite(logp)
+        return sample.reshape(1, 1), np.array([logp], float), {"fake": True}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    fixed = dict(PARAMS_NICKEL)
+    fixed.pop("T_floor")
+
+    data = tf.BolometricData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        y=np.array([1.0e41, 1.1e41, 1.2e41], float),
+        yerr=np.array([1.0e40, 1.0e40, 1.0e40], float),
+    )
+
+    res = tf.fit_bol(
+        data=data,
+        model="nickel",
+        z=0.001728,
+        fixed=fixed,
+        model_kwargs={
+            "t_max_days": 30.0,
+            "solver_kwargs": {"Nx": 20, "Ny": 80},
+        },
+    )
+
+    assert res.param_names == ["t_shift"]
+    assert res.best_params["t_shift"] == pytest.approx(1.25)
+    assert res.best_params_raw["t_shift"] == pytest.approx(1.25)
+    assert res.median_params["t_shift"] == pytest.approx(1.25)
+    assert res.best_fit["params"]["t_shift"] == pytest.approx(1.25)
+
+
 def test_cutoff_blackbody_suppresses_blue_flux_only():
     bb = BlackbodySED()
     sed = CutoffBlackbodySED(

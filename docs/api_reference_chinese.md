@@ -321,6 +321,10 @@ C(lambda) = max(f_min, (lambda/lambda_cut)^a)      for lambda < lambda_cut
 
 `fit_bol` 和 `fit_multiband` 返回 `FitResult`。
 
+如果 `t_shift` 参与拟合采样，它会直接出现在 `res.param_names`，也会出现在
+`res.best_params`、`res.best_params_raw`、`res.median_params` 和
+`res.best_fit["params"]` 等参数字典里。
+
 | 字段/属性 | 含义 |
 |---|---|
 | `res.best_params` | 四舍五入后的 best-fit 参数字典 |
