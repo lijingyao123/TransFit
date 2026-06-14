@@ -77,8 +77,9 @@ rest-frame time 中求解，并在 API 边界转换回 observer frame。
 | `eps_sh` | shock 辐射效率 |
 | `T_floor` | 温度下限，K |
 
-拟合时可加入可选参数 `t_shift`。当 `include_t_shift=True` 或运行拟合接口时，
-它会被加入参数列表，并被限制为非负。拟合中模型在以下时间点计算：
+拟合接口会使用可选参数 `t_shift` 来平移模型时间轴。`t_shift` 被限制为
+非负；如果不想拟合它，可以在 `fixed` 中设为 `0.0`。拟合中模型在以下
+时间点计算：
 
 ```text
 t_eval = t_obs + t_shift

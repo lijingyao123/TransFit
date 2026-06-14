@@ -83,9 +83,9 @@ should use the canonical names.
 | `eps_sh` | shock radiation efficiency |
 | `T_floor` | temperature floor, K |
 
-The optional fit parameter `t_shift` is appended when
-`include_t_shift=True` or during fitting. It is constrained to be non-negative.
-In fitting, the model is evaluated at:
+The fitting interface uses the optional parameter `t_shift` to shift the model
+time axis. It is constrained to be non-negative; set `t_shift=0.0` in `fixed`
+when no time shift should be fitted. In fitting, the model is evaluated at:
 
 ```text
 t_eval = t_obs + t_shift
