@@ -394,8 +394,7 @@ If you use TransFit in research, see the
 
 ## Papers Using TransFit
 
-- [Thermal X-rays breaking out from pre-explosion ejecta of a dying massive star](https://arxiv.org/abs/2606.10014)
-- [SN 2024igg: A Super-Chandrasekhar/03fg-like SN exhibiting C II-dominated spectra after explosion](https://arxiv.org/abs/2602.03427)
+See [papers using TransFit](docs/papers_using_transfit.md).
 
 ## AI Assistance
 
