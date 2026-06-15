@@ -377,7 +377,6 @@ Full details are available in [API and parameter reference](docs/api_reference.m
 
 - [Tutorial notebook](examples/tutorial.ipynb)
 - [API and parameter reference](docs/api_reference.md)
-- [Model citation guide](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md)
 
 ## Contact
 
@@ -389,12 +388,51 @@ For questions about this project, please contact:
 
 ## Citation
 
-If you use TransFit in research, see the
-[model citation guide](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md).
+If you use TransFit in research, please cite:
+
+```bibtex
+@ARTICLE{2025ApJ...992...20L,
+       author = {{Liu}, Liang-Duan and {Zhang}, Yu-Hao and {Yu}, Yun-Wei and {Du}, Ze-Xin and {Li}, Jing-Yao and {Wu}, Guang-Lei and {Dai}, Zi-Gao},
+        title = "{TransFit: An Efficient Framework for Transient Light-curve Fitting with Time-dependent Radiative Diffusion}",
+      journal = {\apj},
+         year = 2025,
+       volume = {992},
+       number = {1},
+          eid = {20},
+        pages = {20},
+          doi = {10.3847/1538-4357/adfed6},
+archivePrefix = {arXiv},
+       eprint = {2505.13825}
+}
+```
+
+For the `csm` model, also cite:
+
+```bibtex
+@ARTICLE{2026ApJ...999..186Z,
+       author = {{Zhang}, Yu-Hao and {Liu}, Liang-Duan and {Du}, Ze-Xin and {Wu}, Guang-Lei and {Li}, Jing-Yao and {Yu}, Yun-Wei},
+        title = "{TransFit-CSM: A Fast, Physically Consistent Framework for Interaction-powered Transients}",
+      journal = {\apj},
+     keywords = {Core-collapse supernovae, Supernovae, Circumstellar matter, Stellar mass loss, 304, 1668, 241, 1613, High Energy Astrophysical Phenomena},
+         year = 2026,
+        month = mar,
+       volume = {999},
+       number = {2},
+          eid = {186},
+        pages = {186},
+          doi = {10.3847/1538-4357/ae434a},
+archivePrefix = {arXiv},
+       eprint = {2511.13265},
+ primaryClass = {astro-ph.HE},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2026ApJ...999..186Z},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+```
 
 ## Papers Using TransFit
 
-See [papers using TransFit](docs/papers_using_transfit.md).
+- Yuan et al., *Thermal X-rays breaking out from pre-explosion ejecta of a dying massive star*, arXiv e-print (2026), [arXiv:2606.10014](https://arxiv.org/abs/2606.10014).
+- Liu et al., *SN 2024igg: A Super-Chandrasekhar/03fg-like SN exhibiting C II-dominated spectra after explosion*, submitted to A&A (2026), [arXiv:2602.03427](https://arxiv.org/abs/2602.03427).
 
 ## AI Assistance
 
