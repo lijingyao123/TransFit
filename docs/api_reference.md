@@ -36,9 +36,9 @@ should use the canonical names.
 | `M_ej` | ejecta mass, $M_\odot$ |
 | `v_ej` | ejecta velocity, $10^9\,{\rm cm\,s^{-1}}$ |
 | `E_Th_in` | initial thermal energy, $10^{49}\,{\rm erg}$ |
-| `M_Ni` | nickel mass, $M_\odot$ |
+| `M_ni` | nickel mass, $M_\odot$ |
 | `R_0` | initial radius, $R_\odot$ |
-| `x_Ni` | nickel mixing coordinate, dimensionless |
+| `f_ni` | nickel mixing coordinate, dimensionless |
 | `kappa` | optical opacity, ${\rm cm^2\,g^{-1}}$ |
 | `kappa_gamma` | gamma-ray opacity, ${\rm cm^2\,g^{-1}}$ |
 | `T_floor` | temperature floor, K |
@@ -52,6 +52,7 @@ should use the canonical names.
 | `E_Th_in` | initial thermal energy, $10^{49}\,{\rm erg}$ |
 | `P_ms` | magnetar spin period, ms |
 | `B14` | magnetar dipole field, $10^{14}\,{\rm G}$ |
+| `f_mag` | magnetar heating mixing coordinate, dimensionless |
 | `R_0` | initial radius, $R_\odot$ |
 | `kappa` | optical opacity, ${\rm cm^2\,g^{-1}}$ |
 | `kappa_gamma` | gamma-ray opacity, ${\rm cm^2\,g^{-1}}$ |
@@ -65,7 +66,9 @@ should use the canonical names.
 | `v_ej` | ejecta velocity, $10^9\,{\rm cm\,s^{-1}}$ |
 | `P_ms` | magnetar spin period, ms |
 | `B14` | magnetar dipole field, $10^{14}\,{\rm G}$ |
-| `M_Ni` | nickel mass, $M_\odot$ |
+| `f_mag` | magnetar heating mixing coordinate, dimensionless |
+| `M_ni` | nickel mass, $M_\odot$ |
+| `f_ni` | nickel mixing coordinate, dimensionless |
 | `kappa` | optical opacity, ${\rm cm^2\,g^{-1}}$ |
 | `kappa_gamma` | gamma-ray opacity, ${\rm cm^2\,g^{-1}}$ |
 | `T_floor` | temperature floor, K |
@@ -93,6 +96,11 @@ t_eval = t_obs + t_shift
 
 A positive `t_shift` means that the model start is earlier than the user's
 observational zero point.
+
+For `magnetar` and `magnetar_ni`, `f_mag` is part of the public parameter
+schema but defaults to a fixed value of `0.2` in fitting when omitted. To fit it,
+pass an explicit prior such as `priors={"f_mag": (0.05, 0.5)}`. Forward-model
+helpers also use `f_mag=0.2` when it is not provided in `params`.
 
 ## Data Containers
 
@@ -223,9 +231,14 @@ res = tf.fit_multiband(
 `(lo, hi)`. A base-10 log-uniform prior uses `("log10", lo, hi)`, where `lo`
 and `hi` are bounds in log10 space.
 
-`fixed` maps parameter names to fixed values. Any model parameter not supplied
-in `fixed` is sampled using its default bounds or the bounds supplied in
-`priors`.
+`fixed` maps parameter names to fixed values. In general, model parameters not
+supplied in `fixed` are sampled using their default bounds or the bounds supplied
+in `priors`.
+
+There are two intentional exceptions. In `fit_bol`, `T_floor` is kept as an
+internal numerical floor and is not part of the sampled bolometric fit state. In
+`magnetar` and `magnetar_ni`, `f_mag` defaults to a fixed value of `0.2` unless
+the user supplies an explicit prior for `f_mag` and does not also fix it.
 
 ### `sigma_int`
 
@@ -359,5 +372,5 @@ and in the parameter dictionaries such as `res.best_params`,
 
 All model use should cite the TransFit software paper. The `csm` model should
 additionally cite the TransFit-CSM paper. See
-[model_citations.md](model_citations.md) for BibTeX entries and
+[model citation guide](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md) for BibTeX entries and
 model-specific guidance.

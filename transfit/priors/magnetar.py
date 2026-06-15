@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 # Canonical parameter order for MagnetarModel:
-# (M_ej, v_ej, E_Th_in, P_ms, B14, R_0, kappa, kappa_gamma, T_floor)
+# (M_ej, v_ej, E_Th_in, P_ms, B14, f_mag, R_0, kappa, kappa_gamma, T_floor)
 #
 # Backward compatibility:
 # - old pure-magnetar calls that omit E_Th_in and R_0 are still accepted in
@@ -15,6 +15,7 @@ MAGNETAR_PARAM_NAMES = [
     "E_Th_in",      # 1e49 erg
     "P_ms",         # ms
     "B14",          # 1e14 G
+    "f_mag",        # [0,1]
     "R_0",          # R_sun
     "kappa",        # cm^2/g
     "kappa_gamma",  # cm^2/g
@@ -27,6 +28,7 @@ MAGNETAR_DEFAULT_BOUNDS = np.array([
     [0.0,   50.0],      # E_Th_in
     [0.7,   20.0],      # P_ms
     [0.1,   30.0],      # B14
+    [0.0,    1.0],      # f_mag
     [0.1, 1000.0],      # R_0
     [0.01,   0.5],      # kappa
     [0.001,  1.0],      # kappa_gamma

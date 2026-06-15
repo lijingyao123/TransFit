@@ -131,11 +131,11 @@ class NickelModel:
     Canonical nickel-powered model.
 
     Canonical theta order:
-    (M_ej, v_ej, E_Th_in, M_Ni, R_0, x_Ni, kappa0, kappa_gamma, T_floor)
+    (M_ej, v_ej, E_Th_in, M_ni, R_0, f_ni, kappa0, kappa_gamma, T_floor)
 
     Backward compatibility:
     - the old shorter pure-nickel form
-      (M_ej, v_ej, M_Ni, x_Ni, kappa0, kappa_gamma, T_floor)
+      (M_ej, v_ej, M_ni, f_ni, kappa0, kappa_gamma, T_floor)
       is still accepted and mapped to E_Th_in=0, R_0=10.
     """
 
@@ -163,9 +163,9 @@ class NickelModel:
 
         theta = tuple(theta)
         if len(theta) == 9:
-            (M_ej, v_ej, E_Th_in, M_Ni, R_max_in, x_s, kappa0, kappa_gamma, T_floor) = theta
+            (M_ej, v_ej, E_Th_in, M_ni, R_max_in, f_ni, kappa0, kappa_gamma, T_floor) = theta
         elif len(theta) == 7:
-            (M_ej, v_ej, M_Ni, x_s, kappa0, kappa_gamma, T_floor) = theta
+            (M_ej, v_ej, M_ni, f_ni, kappa0, kappa_gamma, T_floor) = theta
             E_Th_in = 0.0
             R_max_in = 10.0
         else:
@@ -176,18 +176,18 @@ class NickelModel:
 
         M_ej = float(M_ej) * M_SUN
         E_Th_in = float(E_Th_in) * 1.0e49
-        M_Ni = float(M_Ni) * M_SUN
+        M_ni = float(M_ni) * M_SUN
         R_max_in = float(R_max_in) * R_SUN
 
-        x_s = float(x_s)
-        if not np.isfinite(x_s) or not (0.0 <= x_s <= 1.0):
-            raise ValueError("x_Ni must be finite and in [0, 1].")
+        f_ni = float(f_ni)
+        if not np.isfinite(f_ni) or not (0.0 <= f_ni <= 1.0):
+            raise ValueError("f_ni must be finite and in [0, 1].")
         kappa0 = float(kappa0)
         kappa_g = float(kappa_gamma)
         v_ej = float(v_ej) * 1e9
 
         x_min, x_max = 1.0, 1.0e4
-        x_heat = np.clip(x_s * x_max, x_min, x_max)
+        x_heat = np.clip(f_ni * x_max, x_min, x_max)
 
         E_K = 0.5 * M_ej * v_ej * v_ej
         I_M = (x_max**3 - x_min**3) / 3.0
@@ -210,7 +210,7 @@ class NickelModel:
             xi0 = 0.0
         else:
             denom_heat = (x_heat**3 - x_min**3) / 3.0
-            xi0 = (I_M * (M_Ni / M_ej)) / denom_heat
+            xi0 = (I_M * (M_ni / M_ej)) / denom_heat
         xi0 = max(xi0, 0.0)
 
         Nx, Ny = int(Nx), int(Ny)

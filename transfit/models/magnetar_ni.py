@@ -32,7 +32,9 @@ def thomas_algorithm(a, b, c_up, d, c_prime, d_prime, x_out):
 @numba.njit(fastmath=True, cache=True)
 def _fast_time_loop_numba(
     Ny, Nx, dx, dy,
-    fR_vals, f_ob_vals, heat_vals, xi_vals,
+    fR_vals, f_ob_vals,
+    heat_mag_vals, xi_mag_vals,
+    heat_ni_vals, xi_ni_vals,
     mu_const, up_const, lo_const, diag_const,
     e_initial, Lfac,
 ):
@@ -50,7 +52,8 @@ def _fast_time_loop_numba(
     i_mid = slice(1, Nx)
     im1 = slice(0, Nx - 1)
     ip1 = slice(2, Nx + 1)
-    xi_inner = xi_vals[1:-1]
+    xi_mag_inner = xi_mag_vals[1:-1]
+    xi_ni_inner = xi_ni_vals[1:-1]
 
     for n in range(Ny):
         fR_now, fR_next = fR_vals[n], fR_vals[n + 1]
@@ -68,8 +71,14 @@ def _fast_time_loop_numba(
         a[Nx] = f_ob_vals[n + 1]
         c_up[Nx] = 0.0
 
-        S_now_inner = xi_inner * (fR_now * heat_vals[n])
-        S_next_inner = xi_inner * (fR_next * heat_vals[n + 1])
+        S_now_inner = fR_now * (
+            xi_mag_inner * heat_mag_vals[n]
+            + xi_ni_inner * heat_ni_vals[n]
+        )
+        S_next_inner = fR_next * (
+            xi_mag_inner * heat_mag_vals[n + 1]
+            + xi_ni_inner * heat_ni_vals[n + 1]
+        )
 
         rhs[i_mid] = (
             e_now[i_mid]
@@ -94,14 +103,14 @@ class MagNiModel:
     Magnetar + Nickel model.
 
     theta order:
-    (M_ej, v_ej, P_ms, B14, M_Ni, kappa0, kappa_gamma, T_floor)
+    (M_ej, v_ej, P_ms, B14, f_mag, M_ni, f_ni, kappa0, kappa_gamma, T_floor)
 
     Internal fixed values:
     - E_Th_in = 0
     - R_max_in = 1 R_sun
     """
 
-    _warmup_theta = (10.0, 1.0, 3.0, 1.0, 0.1, 0.2, 0.03, 4000.0)
+    _warmup_theta = (10.0, 1.0, 3.0, 1.0, 0.2, 0.1, 0.05, 0.2, 0.03, 4000.0)
     _warmup_kwargs = {"Nx": 10, "Ny": 20}
 
     def __init__(self, *, warmup: bool = False):
@@ -122,24 +131,37 @@ class MagNiModel:
         eNi, eCo = EPSILON_NI, EPSILON_CO
         tau_Ni, tau_Co = TAU_NI, TAU_CO
 
-        (M_ej, v_ej, P_ms, B14, M_Ni, kappa0, kappa_gamma, T_floor) = theta
+        theta = tuple(theta)
+        if len(theta) == 10:
+            (M_ej, v_ej, P_ms, B14, f_mag, M_ni, f_ni, kappa0, kappa_gamma, T_floor) = theta
+        elif len(theta) == 9:
+            (M_ej, v_ej, P_ms, B14, M_ni, f_ni, kappa0, kappa_gamma, T_floor) = theta
+            f_mag = 0.2
+        else:
+            raise ValueError("MagNiModel theta must have length 10 (or legacy length 9).")
         E_Th_in = 0.0
         R_max_in = 1.0
 
         M_ej = float(M_ej) * M_SUN
         E_Th_in = float(E_Th_in) * 1.0e49
-        M_Ni = float(M_Ni)
-        if not np.isfinite(M_Ni) or M_Ni < 0.0:
-            raise ValueError("M_Ni must be finite and >= 0.")
-        M_Ni = M_Ni * M_SUN
+        M_ni = float(M_ni)
+        if not np.isfinite(M_ni) or M_ni < 0.0:
+            raise ValueError("M_ni must be finite and >= 0.")
+        M_ni = M_ni * M_SUN
         R_max_in = float(R_max_in) * R_SUN
-        x_s = 0.05
+        f_mag = float(f_mag)
+        if not np.isfinite(f_mag) or not (0.0 <= f_mag <= 1.0):
+            raise ValueError("f_mag must be finite and in [0, 1].")
+        f_ni = float(f_ni)
+        if not np.isfinite(f_ni) or not (0.0 <= f_ni <= 1.0):
+            raise ValueError("f_ni must be finite and in [0, 1].")
         kappa0 = float(kappa0)
         kappa_g = float(kappa_gamma)
         v_ej = float(v_ej) * 1e9
 
         x_min, x_max = 1.0, 1.0e4
-        x_heat = np.clip(x_s * x_max, x_min, x_max)
+        x_heat_mag = np.clip(f_mag * x_max, x_min, x_max)
+        x_heat_ni = np.clip(f_ni * x_max, x_min, x_max)
 
         E_K = 0.5 * M_ej * v_ej * v_ej
         I_M = (x_max**3 - x_min**3) / 3.0
@@ -168,12 +190,19 @@ class MagNiModel:
         L0 = (4.0 * pi * R_min_in * c * u0) / (3.0 * kappa0 * rho_in)
         e0_coeff = E_Th_in / (2.0 * pi * u0 * x_max**2 * R_min_in**3)
 
-        if x_heat <= x_min + 1e-14:
-            xi0 = 0.0
+        if x_heat_mag <= x_min + 1e-14:
+            xi0_mag = 0.0
         else:
-            denom_heat = (x_heat**3 - x_min**3) / 3.0
-            xi0 = I_M / denom_heat
-        xi0 = max(xi0, 0.0)
+            denom_heat_mag = (x_heat_mag**3 - x_min**3) / 3.0
+            xi0_mag = I_M / denom_heat_mag
+        xi0_mag = max(xi0_mag, 0.0)
+
+        if x_heat_ni <= x_min + 1e-14:
+            xi0_ni = 0.0
+        else:
+            denom_heat_ni = (x_heat_ni**3 - x_min**3) / 3.0
+            xi0_ni = I_M / denom_heat_ni
+        xi0_ni = max(xi0_ni, 0.0)
 
         Nx, Ny = int(Nx), int(Ny)
         x_vals = np.linspace(x_min, x_max, Nx + 1)
@@ -199,13 +228,18 @@ class MagNiModel:
         heat_mag = dep / (1.0 + t_phys / t_p)**2
         eCo_ratio = eCo / (eNi - eCo)
         heat_ni = np.exp(-t_phys / tau_Ni) + eCo_ratio * np.exp(-t_phys / tau_Co) * dep
-        ni_scale = (M_Ni / M_ej) * (eNi - eCo) / eps0
-        heat = heat_mag + ni_scale * heat_ni
+        ni_scale = (M_ni / M_ej) * (eNi - eCo) / eps0
+        heat_ni = ni_scale * heat_ni
 
-        xi_vals = np.zeros_like(x_vals)
-        if x_heat > x_min:
-            mask_heat = (x_vals >= x_min) & (x_vals <= x_heat)
-            xi_vals[mask_heat] = xi0
+        xi_mag_vals = np.zeros_like(x_vals)
+        if x_heat_mag > x_min:
+            mask_heat_mag = (x_vals >= x_min) & (x_vals <= x_heat_mag)
+            xi_mag_vals[mask_heat_mag] = xi0_mag
+
+        xi_ni_vals = np.zeros_like(x_vals)
+        if x_heat_ni > x_min:
+            mask_heat_ni = (x_vals >= x_min) & (x_vals <= x_heat_ni)
+            xi_ni_vals[mask_heat_ni] = xi0_ni
 
         i_mid = slice(1, Nx)
         im1 = slice(0, Nx - 1)
@@ -222,7 +256,9 @@ class MagNiModel:
 
         L_out = _fast_time_loop_numba(
             Ny, Nx, dx, dy,
-            fR_vals, f_ob_vals, heat, xi_vals,
+            fR_vals, f_ob_vals,
+            heat_mag, xi_mag_vals,
+            heat_ni, xi_ni_vals,
             mu_const, up_const, lo_const, diag_const,
             e_initial, Lfac,
         )

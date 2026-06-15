@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 # Parameter order for MagNiModel:
-# (M_ej, v_ej, P_ms, B14, M_Ni, kappa, kappa_gamma, T_floor)
+# (M_ej, v_ej, P_ms, B14, f_mag, M_ni, f_ni, kappa, kappa_gamma, T_floor)
 #
 # Notes:
 # - E_Th_in is fixed to 0.
@@ -14,7 +14,9 @@ MAGNI_PARAM_NAMES = [
     "v_ej",         # 1e9 cm/s
     "P_ms",         # ms
     "B14",          # 1e14 G
-    "M_Ni",         # Msun
+    "f_mag",        # [0,1]
+    "M_ni",         # Msun
+    "f_ni",         # [0,1]
     "kappa",        # cm^2/g
     "kappa_gamma",  # cm^2/g
     "T_floor",      # K
@@ -25,7 +27,9 @@ MAGNI_DEFAULT_BOUNDS = np.array([
     [0.1,    5.0],      # v_ej
     [0.7,   20.0],      # P_ms
     [0.1,   30.0],      # B14
-    [0.0,    1.5],      # M_Ni
+    [0.0,    1.0],      # f_mag
+    [0.0,    1.5],      # M_ni
+    [0.0,    1.0],      # f_ni
     [0.01,   0.5],      # kappa
     [0.001,  1.0],      # kappa_gamma
     [1000.0, 20000.0],  # T_floor

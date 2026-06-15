@@ -361,7 +361,7 @@ def _model_vector_from_params(
     return tuple(model_vector)
 
 
-_NONNEGATIVE_PARAMS = {"E_Th_in", "M_Ni", "delta", "s", "t_shift"}
+_NONNEGATIVE_PARAMS = {"E_Th_in", "M_ni", "delta", "s", "t_shift"}
 _POSITIVE_PARAMS = {
     "M_csm",
     "M_ej",
@@ -377,7 +377,7 @@ _POSITIVE_PARAMS = {
     "P_ms",
     "B14",
 }
-_UNIT_INTERVAL_PARAMS = {"eps_sh", "x_Ni"}
+_UNIT_INTERVAL_PARAMS = {"eps_sh", "f_ni", "f_mag"}
 
 
 def _model_values_from_vector(model: str, model_vector) -> Dict[str, float]:
@@ -425,9 +425,9 @@ def _physical_constraint_reason(vals: Dict[str, float]) -> Optional[str]:
     if "delta" in values and not (values["delta"] < 3.0):
         return "delta must be < 3."
 
-    if "M_Ni" in values and "M_ej" in values:
-        if values["M_Ni"] > values["M_ej"]:
-            return "M_Ni must be <= M_ej."
+    if "M_ni" in values and "M_ej" in values:
+        if values["M_ni"] > values["M_ej"]:
+            return "M_ni must be <= M_ej."
 
     if "R_csm_in" in values and "R_csm_out" in values:
         if not (values["R_csm_out"] > values["R_csm_in"]):
@@ -776,6 +776,25 @@ def predict_multiband(
 # -------------------------
 # Fitting helpers
 # -------------------------
+
+_DEFAULT_FIXED_MODEL_PARAMS = {
+    "magnetar": {"f_mag": 0.2},
+    "magnetar_ni": {"f_mag": 0.2},
+}
+
+
+def _apply_default_fixed_model_params(
+    model: str,
+    priors_model: Optional[Dict[str, Any]],
+    fixed_model: Optional[Dict[str, float]],
+) -> Dict[str, float]:
+    fixed_out = dict(fixed_model or {})
+    prior_names = set(dict(priors_model or {}).keys())
+    for name, value in _DEFAULT_FIXED_MODEL_PARAMS.get(str(model), {}).items():
+        if name not in fixed_out and name not in prior_names:
+            fixed_out[name] = float(value)
+    return fixed_out
+
 
 def _split_sampling(
     names_all: List[str],
@@ -1517,6 +1536,7 @@ def fit_multiband(
         priors,
         fixed,
     )
+    fixed_model = _apply_default_fixed_model_params(model, priors_model, fixed_model)
     priors_lin, priors_log10 = _split_prior_specs(priors_model)
     names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=True)
     bounds_all, log_set_all = _apply_log10_priors(names_all, bounds_all, priors_log10)
@@ -1681,6 +1701,7 @@ def fit_bol(
         priors,
         fixed,
     )
+    fixed_model = _apply_default_fixed_model_params(model, priors_model, fixed_model)
     priors_lin, priors_log10 = _split_prior_specs(priors_model)
     names_all, bounds_all = build_bounds(model, priors=priors_lin, include_t_shift=True)
     bounds_all, log_set_all = _apply_log10_priors(names_all, bounds_all, priors_log10)

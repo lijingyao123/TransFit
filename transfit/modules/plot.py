@@ -79,8 +79,8 @@ def _mag_ylabel(y_kind: str, mag_system: str) -> str:
 _PARAM_LABELS_LATEX = {
     "M_ej": r"$M_{\mathrm{ej}}\,[M_{\odot}]$",
     "v_ej": r"$v_{\mathrm{ej}}\,[10^{9}\,\mathrm{cm\,s^{-1}}]$",
-    "M_Ni": r"$M_{\mathrm{Ni}}\,[M_{\odot}]$",
-    "x_Ni": r"$x_{\mathrm{Ni}}$",
+    "M_ni": r"$M_{\mathrm{Ni}}\,[M_{\odot}]$",
+    "f_ni": r"$f_{\mathrm{Ni}}$",
     "kappa": r"$\kappa\,[\mathrm{cm^{2}\,g^{-1}}]$",
     "kappa_gamma": r"$\kappa_{\gamma}\,[\mathrm{cm^{2}\,g^{-1}}]$",
     "T_floor": r"$T_{\mathrm{floor}}\,[\mathrm{K}]$",

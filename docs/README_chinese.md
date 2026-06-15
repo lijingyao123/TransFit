@@ -60,9 +60,9 @@ params = {
     "M_ej": 3.0,
     "v_ej": 1.0,
     "E_Th_in": 1.5,
-    "M_Ni": 0.08,
+    "M_ni": 0.08,
     "R_0": 120.0,
-    "x_Ni": 0.2,
+    "f_ni": 0.2,
     "kappa": 0.12,
     "kappa_gamma": 0.03,
     "T_floor": 4500.0,
@@ -99,9 +99,9 @@ params = {
     "M_ej": 3.0,
     "v_ej": 1.0,
     "E_Th_in": 1.5,
-    "M_Ni": 0.08,
+    "M_ni": 0.08,
     "R_0": 120.0,
-    "x_Ni": 0.2,
+    "f_ni": 0.2,
     "kappa": 0.12,
     "kappa_gamma": 0.03,
     "T_floor": 4500.0,
@@ -162,12 +162,12 @@ res = tf.fit_bol(
         "M_ej": (0.5, 8.0),
         "v_ej": (0.2, 3.0),
         "E_Th_in": (0.05, 8.0),
-        "M_Ni": ("log10", -3.0, -0.2),
+        "M_ni": ("log10", -3.0, -0.2),
         "R_0": (10.0, 400.0),
         "t_shift": (0.0, 20.0),
     },
     fixed={
-        "x_Ni": 0.2,
+        "f_ni": 0.2,
         "kappa": 0.12,
         "kappa_gamma": 0.03,
     },
@@ -241,12 +241,12 @@ res = tf.fit_multiband(
         "M_ej": (0.5, 8.0),
         "v_ej": (0.2, 3.0),
         "E_Th_in": (0.05, 8.0),
-        "M_Ni": ("log10", -3.0, -0.2),
+        "M_ni": ("log10", -3.0, -0.2),
         "R_0": (10.0, 400.0),
         "t_shift": (0.0, 20.0),
     },
     fixed={
-        "x_Ni": 0.2,
+        "f_ni": 0.2,
         "kappa": 0.12,
         "kappa_gamma": 0.03,
         "T_floor": 4500.0,
@@ -375,27 +375,21 @@ loaded = tf.load(path)
 - [教程 notebook](../examples/tutorial.ipynb)
 - [API 和参数参考](api_reference.md)
 - [English API reference](api_reference.md)
-- [模型引用指南](model_citations.md)
+- [模型引用指南](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md)
+
+## 联系方式
+
+如果对本项目有问题，请联系：
+
+- Liangduan Liu ([liuld@ccnu.edu.cn](mailto:liuld@ccnu.edu.cn))
+- Yuhao Zhang ([zhangyh2001@foxmail.com](mailto:zhangyh2001@foxmail.com))
+- GuangLei Wu ([wuguanglei@mails.ccnu.edu.cn](mailto:wuguanglei@mails.ccnu.edu.cn))
 
 ## 引用
 
-如果你在科研工作中使用 TransFit，请引用 TransFit 软件论文：
+如果你在科研工作中使用 TransFit，请查看
+[模型引用指南](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md)。
 
-```bibtex
-@ARTICLE{2025ApJ...992...20L,
-       author = {{Liu}, Liang-Duan and {Zhang}, Yu-Hao and {Yu}, Yun-Wei and {Du}, Ze-Xin and {Li}, Jing-Yao and {Wu}, Guang-Lei and {Dai}, Zi-Gao},
-        title = "{TransFit: An Efficient Framework for Transient Light-curve Fitting with Time-dependent Radiative Diffusion}",
-      journal = {\apj},
-         year = 2025,
-       volume = {992},
-       number = {1},
-          eid = {20},
-        pages = {20},
-          doi = {10.3847/1538-4357/adfed6},
-archivePrefix = {arXiv},
-       eprint = {2505.13825}
-}
-```
+## AI 辅助声明
 
-不同模型的具体引用规则请见[模型引用指南](model_citations.md)；使用 `csm`
-模型时还需要引用 TransFit-CSM 论文。
+本项目中的部分代码和文档是在 OpenAI Codex 辅助下生成的。

@@ -40,9 +40,9 @@ PARAMS_NI = {
     "M_ej": 3.0,
     "v_ej": 1.0,
     "E_Th_in": 1.5,
-    "M_Ni": 0.08,
+    "M_ni": 0.08,
     "R_0": 120.0,
-    "x_Ni": 0.2,
+    "f_ni": 0.2,
     "kappa": 0.12,
     "kappa_gamma": 0.03,
     "T_floor": 3000.0,
@@ -62,8 +62,8 @@ PARAMS_CSM = {
 LEGACY_PARAMS_NI = {
     "M_ej": 3.0,
     "v_ej": 1.0,
-    "M_Ni": 0.08,
-    "x_Ni": 0.2,
+    "M_ni": 0.08,
+    "f_ni": 0.2,
     "kappa": 0.12,
     "kappa_gamma": 0.03,
     "T_floor": 3000.0,
@@ -85,14 +85,62 @@ def _standard_normal_lnprob(x):
 def test_public_nickel_and_magnetar_use_canonical_full_parameter_sets():
     nickel_names = tf.model_param_names("nickel")
     magnetar_names = tf.model_param_names("magnetar")
+    magnetar_ni_names = tf.model_param_names("magnetar_ni")
     csm_names = tf.model_param_names("csm")
 
-    assert nickel_names == ["M_ej", "v_ej", "E_Th_in", "M_Ni", "R_0", "x_Ni", "kappa", "kappa_gamma", "T_floor"]
-    assert magnetar_names == ["M_ej", "v_ej", "E_Th_in", "P_ms", "B14", "R_0", "kappa", "kappa_gamma", "T_floor"]
+    assert nickel_names == ["M_ej", "v_ej", "E_Th_in", "M_ni", "R_0", "f_ni", "kappa", "kappa_gamma", "T_floor"]
+    assert magnetar_names == ["M_ej", "v_ej", "E_Th_in", "P_ms", "B14", "f_mag", "R_0", "kappa", "kappa_gamma", "T_floor"]
+    assert magnetar_ni_names == ["M_ej", "v_ej", "P_ms", "B14", "f_mag", "M_ni", "f_ni", "kappa", "kappa_gamma", "T_floor"]
     assert csm_names == ["M_ej", "E_sn", "M_csm", "R_csm_out", "kappa", "s", "eps_sh", "T_floor"]
     assert tf.model_param_names("nickel", include_t_shift=True)[-1] == "t_shift"
+    assert tf.model_param_names("magnetar_ni", include_t_shift=True)[-1] == "t_shift"
     assert tf.model_param_names("interaction") == csm_names
     assert tf.model_param_names("csm", include_t_shift=True)[-1] == "t_shift"
+
+
+def test_magnetar_f_mag_defaults_to_fixed_unless_prior_is_given(monkeypatch):
+    def fake_default_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        assert "f_mag" not in prior.param_names
+        assert lnprob.fixed["f_mag"] == pytest.approx(0.2)
+        sample = np.empty(0, dtype=float)
+        return sample.reshape(1, 0), np.array([0.0], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_default_sampler)
+
+    data = tf.BolometricData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        y=np.array([1.0e41, 1.1e41, 1.2e41], float),
+        yerr=np.array([1.0e40, 1.0e40, 1.0e40], float),
+    )
+    fixed = {
+        "M_ej": 5.0,
+        "v_ej": 1.0,
+        "E_Th_in": 1.0,
+        "P_ms": 3.0,
+        "B14": 1.0,
+        "R_0": 100.0,
+        "kappa": 0.2,
+        "kappa_gamma": 0.03,
+        "t_shift": 0.0,
+    }
+    res = tf.fit_bol(data=data, model="magnetar", fixed=fixed)
+    assert res.fixed["f_mag"] == pytest.approx(0.2)
+    assert "f_mag" not in res.param_names
+
+    def fake_prior_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        assert list(prior.param_names) == ["f_mag"]
+        sample = np.array([0.35], float)
+        return sample.reshape(1, 1), np.array([0.0], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_prior_sampler)
+    res = tf.fit_bol(
+        data=data,
+        model="magnetar",
+        fixed=fixed,
+        priors={"f_mag": (0.1, 0.5)},
+    )
+    assert res.param_names == ["f_mag"]
+    assert res.best_params["f_mag"] == pytest.approx(0.35)
 
 
 def test_public_forward_signatures_use_params_not_theta():
@@ -214,12 +262,12 @@ def test_negative_redshift_is_rejected_by_public_forward_apis():
 
 
 def test_physical_constraints_reject_ni_mass_larger_than_ejecta():
-    assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 1.1}) == -np.inf
-    assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 1.0}) == pytest.approx(0.0)
-    assert _physical_constraints_lnprior({"M_ej": 1.0, "M_Ni": 0.1}) == pytest.approx(0.0)
+    assert _physical_constraints_lnprior({"M_ej": 1.0, "M_ni": 1.1}) == -np.inf
+    assert _physical_constraints_lnprior({"M_ej": 1.0, "M_ni": 1.0}) == pytest.approx(0.0)
+    assert _physical_constraints_lnprior({"M_ej": 1.0, "M_ni": 0.1}) == pytest.approx(0.0)
     assert _physical_constraints_lnprior({"kappa": -0.1}) == -np.inf
     assert _physical_constraints_lnprior({"kappa_gamma": 0.0}) == -np.inf
-    assert _physical_constraints_lnprior({"x_Ni": 1.1}) == -np.inf
+    assert _physical_constraints_lnprior({"f_ni": 1.1}) == -np.inf
     assert _physical_constraints_lnprior({"T_floor": np.nan}) == -np.inf
     assert _physical_constraints_lnprior({"t_shift": -0.1}) == -np.inf
     assert _physical_constraints_lnprior({"t_shift": 0.0}) == pytest.approx(0.0)
@@ -374,8 +422,8 @@ def test_fit_rejects_explicit_t_max_days_smaller_than_t_shift_range():
 
 def test_public_forward_rejects_nonphysical_parameters_before_solving():
     bad = dict(PARAMS_NI)
-    bad["x_Ni"] = 1.1
-    with pytest.raises(ValueError, match="x_Ni must be in \\[0, 1\\]"):
+    bad["f_ni"] = 1.1
+    with pytest.raises(ValueError, match="f_ni must be in \\[0, 1\\]"):
         tf.lightcurve_bol(
             model="nickel",
             params=bad,
@@ -462,12 +510,22 @@ def test_model_classes_reject_values_previously_silent_clamped():
 
     bad_nickel = list(PARAMS_NI.values())
     bad_nickel[5] = 1.5
-    with pytest.raises(ValueError, match="x_Ni"):
+    with pytest.raises(ValueError, match="f_ni"):
         NickelModel().calculate_light_curve(bad_nickel, Nx=20, Ny=50, t_max_days=5.0)
 
     bad_magni = list(MagNiModel._warmup_theta)
-    bad_magni[4] = -0.1
-    with pytest.raises(ValueError, match="M_Ni"):
+    bad_magni[4] = 1.5
+    with pytest.raises(ValueError, match="f_mag"):
+        MagNiModel().calculate_light_curve(bad_magni, Nx=20, Ny=50, t_max_days=5.0)
+
+    bad_magni = list(MagNiModel._warmup_theta)
+    bad_magni[5] = -0.1
+    with pytest.raises(ValueError, match="M_ni"):
+        MagNiModel().calculate_light_curve(bad_magni, Nx=20, Ny=50, t_max_days=5.0)
+
+    bad_magni = list(MagNiModel._warmup_theta)
+    bad_magni[6] = 1.5
+    with pytest.raises(ValueError, match="f_ni"):
         MagNiModel().calculate_light_curve(bad_magni, Nx=20, Ny=50, t_max_days=5.0)
 
 
@@ -519,9 +577,9 @@ def test_fit_treats_nonphysical_solver_output_as_impossible(monkeypatch):
         fixed={
             "v_ej": 1.0,
             "E_Th_in": 1.0,
-            "M_Ni": 0.1,
+            "M_ni": 0.1,
             "R_0": 100.0,
-            "x_Ni": 0.2,
+            "f_ni": 0.2,
             "kappa": 0.12,
             "kappa_gamma": 0.03,
             "t_shift": 0.0,
@@ -539,11 +597,11 @@ def test_public_fit_rejects_fixed_ni_mass_larger_than_ejecta():
         yerr=np.array([1.0e40, 1.0e40, 1.0e40], float),
     )
 
-    with pytest.raises(ValueError, match="M_Ni must be <= M_ej"):
+    with pytest.raises(ValueError, match="M_ni must be <= M_ej"):
         tf.fit_bol(
             data=data,
             model="nickel",
-            fixed={"M_ej": 0.5, "M_Ni": 0.6},
+            fixed={"M_ej": 0.5, "M_ni": 0.6},
         )
 
 
@@ -1253,11 +1311,11 @@ def test_explicit_distance_and_extinction_roundtrip(tmp_path):
                 "M_ej": (1.0, 5.0),
                 "v_ej": (0.5, 2.0),
                 "E_Th_in": (0.05, 8.0),
-                "M_Ni": (0.01, 0.2),
+                "M_ni": (0.01, 0.2),
                 "R_0": (10.0, 400.0),
                 "T_floor": (2000.0, 6000.0),
             },
-            fixed={"x_Ni": 0.2, "kappa": 0.12, "kappa_gamma": 0.03, "t_shift": 0.0},
+            fixed={"f_ni": 0.2, "kappa": 0.12, "kappa_gamma": 0.03, "t_shift": 0.0},
             sampler="emcee",
             sampler_kwargs={"nwalkers": 16, "nsteps": 10, "burnin": 2, "thin": 1, "seed": 1, "progress": False},
             model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 8.0},

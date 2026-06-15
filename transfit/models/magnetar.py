@@ -93,15 +93,17 @@ class MagnetarModel:
     Canonical magnetar-powered model.
 
     Canonical theta order:
-    (M_ej, v_ej, E_Th_in, P_ms, B14, R_0, kappa0, kappa_gamma, T_floor)
+    (M_ej, v_ej, E_Th_in, P_ms, B14, f_mag, R_0, kappa0, kappa_gamma, T_floor)
 
     Backward compatibility:
+    - the previous full form without f_mag is still accepted and mapped to
+      f_mag=0.2.
     - the old shorter pure-magnetar form
       (M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor)
-      is still accepted and mapped to E_Th_in=0, R_0=1.
+      is still accepted and mapped to E_Th_in=0, f_mag=0.2, R_0=1.
     """
 
-    _warmup_theta = (10.0, 1.0, 1.0, 3.0, 1.0, 100.0, 0.2, 0.03, 4000.0)
+    _warmup_theta = (10.0, 1.0, 1.0, 3.0, 1.0, 0.2, 100.0, 0.2, 0.03, 4000.0)
     _warmup_kwargs = {"Nx": 10, "Ny": 20}
 
     def __init__(self, *, warmup: bool = False):
@@ -121,28 +123,34 @@ class MagnetarModel:
         pi, c, day = PI, C_LIGHT, DAY
 
         theta = tuple(theta)
-        if len(theta) == 9:
+        if len(theta) == 10:
+            (M_ej, v_ej, E_Th_in, P_ms, B14, f_mag, R_max_in, kappa0, kappa_gamma, T_floor) = theta
+        elif len(theta) == 9:
             (M_ej, v_ej, E_Th_in, P_ms, B14, R_max_in, kappa0, kappa_gamma, T_floor) = theta
+            f_mag = 0.2
         elif len(theta) == 7:
             (M_ej, v_ej, P_ms, B14, kappa0, kappa_gamma, T_floor) = theta
             E_Th_in = 0.0
+            f_mag = 0.2
             R_max_in = 1.0
         else:
             raise ValueError(
-                "MagnetarModel theta must have length 9 "
-                "(or legacy length 7 for the pure-magnetar form)."
+                "MagnetarModel theta must have length 10 "
+                "(or legacy length 9/7 forms)."
             )
 
         M_ej = float(M_ej) * M_SUN
         E_Th_in = float(E_Th_in) * 1.0e49
         R_max_in = float(R_max_in) * R_SUN
-        x_s = 0.05
+        f_mag = float(f_mag)
+        if not np.isfinite(f_mag) or not (0.0 <= f_mag <= 1.0):
+            raise ValueError("f_mag must be finite and in [0, 1].")
         kappa0 = float(kappa0)
         kappa_g = float(kappa_gamma)
         v_ej = float(v_ej) * 1e9
 
         x_min, x_max = 1.0, 1.0e4
-        x_heat = np.clip(x_s * x_max, x_min, x_max)
+        x_heat = np.clip(f_mag * x_max, x_min, x_max)
 
         E_K = 0.5 * M_ej * v_ej * v_ej
         I_M = (x_max**3 - x_min**3) / 3.0

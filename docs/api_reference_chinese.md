@@ -30,9 +30,9 @@ rest-frame time 中求解，并在 API 边界转换回 observer frame。
 | `M_ej` | 抛射物质量，M☉ |
 | `v_ej` | 抛射物速度，10^9 cm s^-1 |
 | `E_Th_in` | 初始热能，10^49 erg |
-| `M_Ni` | 镍质量，M☉ |
+| `M_ni` | 镍质量，M☉ |
 | `R_0` | 初始半径，R☉ |
-| `x_Ni` | 镍混合位置，无量纲 |
+| `f_ni` | 镍混合位置，无量纲 |
 | `kappa` | optical opacity，cm^2 g^-1 |
 | `kappa_gamma` | gamma-ray opacity，cm^2 g^-1 |
 | `T_floor` | 温度下限，K |
@@ -46,6 +46,7 @@ rest-frame time 中求解，并在 API 边界转换回 observer frame。
 | `E_Th_in` | 初始热能，10^49 erg |
 | `P_ms` | 磁星自转周期，ms |
 | `B14` | 磁星偶极磁场，10^14 G |
+| `f_mag` | 磁星加热混合位置，无量纲 |
 | `R_0` | 初始半径，R☉ |
 | `kappa` | optical opacity，cm^2 g^-1 |
 | `kappa_gamma` | gamma-ray opacity，cm^2 g^-1 |
@@ -59,7 +60,9 @@ rest-frame time 中求解，并在 API 边界转换回 observer frame。
 | `v_ej` | 抛射物速度，10^9 cm s^-1 |
 | `P_ms` | 磁星自转周期，ms |
 | `B14` | 磁星偶极磁场，10^14 G |
-| `M_Ni` | 镍质量，M☉ |
+| `f_mag` | 磁星加热混合位置，无量纲 |
+| `M_ni` | 镍质量，M☉ |
+| `f_ni` | 镍混合位置，无量纲 |
 | `kappa` | optical opacity，cm^2 g^-1 |
 | `kappa_gamma` | gamma-ray opacity，cm^2 g^-1 |
 | `T_floor` | 温度下限，K |
@@ -86,6 +89,11 @@ t_eval = t_obs + t_shift
 ```
 
 因此 `t_shift > 0` 表示模型起点早于用户数据的观测零点。
+
+对于 `magnetar` 和 `magnetar_ni`，`f_mag` 属于公开参数结构，但拟合时如果省略，
+会默认固定为 `0.2`。如果需要拟合它，需要显式给先验，例如
+`priors={"f_mag": (0.05, 0.5)}`。正向模型的 `params` 省略 `f_mag` 时也会使用
+`0.2`。
 
 ## 数据容器
 
@@ -210,8 +218,13 @@ res = tf.fit_multiband(
 以 10 为底的 log-uniform 先验写作 `("log10", lo, hi)`，其中 `lo` 和
 `hi` 是 log10 空间中的边界。
 
-`fixed` 是参数名到固定值的映射。没有放在 `fixed` 里的模型参数会被采样，
+`fixed` 是参数名到固定值的映射。一般情况下，没有放在 `fixed` 里的模型参数会被采样，
 其范围来自默认边界或 `priors` 中用户给出的边界。
+
+有两个有意保留的例外。`fit_bol` 中的 `T_floor` 作为内部数值温度下限使用，
+不进入 bolometric 拟合采样状态。`magnetar` 和 `magnetar_ni` 中的 `f_mag`
+如果用户没有显式给先验，默认固定为 `0.2`；如果需要拟合它，需要给出
+`priors={"f_mag": (...)}`，并且不要同时在 `fixed` 中固定它。
 
 ### `sigma_int`
 
@@ -342,4 +355,4 @@ C(lambda) = max(f_min, (lambda/lambda_cut)^a)      for lambda < lambda_cut
 
 所有模型都应引用 TransFit 软件论文。使用 `csm` 模型时，还应额外引用
 TransFit-CSM 论文。BibTeX 和模型引用规则见
-[model_citations.md](model_citations.md)。
+[model citation guide](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md)。
