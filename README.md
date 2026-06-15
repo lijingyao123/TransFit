@@ -392,6 +392,11 @@ For questions about this project, please contact:
 If you use TransFit in research, see the
 [model citation guide](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md).
 
+## Papers Using TransFit
+
+- [Thermal X-rays breaking out from pre-explosion ejecta of a dying massive star](https://arxiv.org/abs/2606.10014)
+- [SN 2024igg: A Super-Chandrasekhar/03fg-like SN exhibiting C II-dominated spectra after explosion](https://arxiv.org/abs/2602.03427)
+
 ## AI Assistance
 
 Parts of the code and documentation in this project were generated with
