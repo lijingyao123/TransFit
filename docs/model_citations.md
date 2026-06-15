@@ -1,6 +1,6 @@
 # Model Citation Guide
 
-If you use TransFit in a paper, cite the TransFit software paper. If you use
+If you use TransFit in a paper, cite the TransFit paper. If you use
 the `csm` model, also cite the TransFit-CSM paper.
 
 This file gives the default recommendation for TransFit's public model names.
@@ -30,10 +30,10 @@ archivePrefix = {arXiv},
 
 | TransFit model | Required citation |
 |---|---|
-| `nickel` | TransFit software paper |
-| `magnetar` | TransFit software paper |
-| `magnetar_ni` | TransFit software paper |
-| `csm` | TransFit software paper and [TransFit-CSM](https://doi.org/10.3847/1538-4357/ae434a) |
+| `nickel` | TransFit paper |
+| `magnetar` | TransFit paper |
+| `magnetar_ni` | TransFit paper |
+| `csm` | TransFit paper and [TransFit-CSM](https://doi.org/10.3847/1538-4357/ae434a) |
 
 ## BibTeX for TransFit-CSM
 

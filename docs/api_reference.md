@@ -370,7 +370,7 @@ and in the parameter dictionaries such as `res.best_params`,
 
 ## Citation Rules
 
-All model use should cite the TransFit software paper. The `csm` model should
+All model use should cite the TransFit paper. The `csm` model should
 additionally cite the TransFit-CSM paper. See
 [model citation guide](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md) for BibTeX entries and
 model-specific guidance.

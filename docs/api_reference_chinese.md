@@ -353,6 +353,6 @@ C(lambda) = max(f_min, (lambda/lambda_cut)^a)      for lambda < lambda_cut
 
 ## 引用规则
 
-所有模型都应引用 TransFit 软件论文。使用 `csm` 模型时，还应额外引用
+所有模型都应引用 TransFit 论文。使用 `csm` 模型时，还应额外引用
 TransFit-CSM 论文。BibTeX 和模型引用规则见
 [model citation guide](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md)。
