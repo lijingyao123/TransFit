@@ -1,7 +1,7 @@
 # Model Citation Guide
 
-If you use TransFit in a paper, cite the TransFit paper. If you use
-the `csm` model, also cite the TransFit-CSM paper.
+If you use TransFit in a paper, cite the TransFit paper.
+If you use the `csm` model, also cite the TransFit-CSM paper.
 
 This file gives the default recommendation for TransFit's public model names.
 It is not intended to replace a complete bibliography for a scientific paper.

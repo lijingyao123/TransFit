@@ -388,7 +388,7 @@ For questions about this project, please contact:
 
 ## Citation
 
-If you use TransFit in research, please cite:
+If you use TransFit in research, please cite the TransFit paper:
 
 ```bibtex
 @ARTICLE{2025ApJ...992...20L,

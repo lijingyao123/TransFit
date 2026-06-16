@@ -303,6 +303,136 @@ def _params_and_shift_from_paramdict(loaded: Dict[str, Any], p: Dict[str, float]
     return model_params, t_shift
 
 
+def _model_zero_time_grid(
+    t_obs: np.ndarray,
+    t_shift: float,
+    t_pad: float,
+    n_t: int,
+) -> Tuple[np.ndarray, np.ndarray, float]:
+    """
+    Build a plotting grid whose physical model origin is visible on the
+    observed-time axis.
+
+    Fit convention:
+        model(t_obs) = raw_model(t_obs + t_shift)
+
+    Therefore raw model time zero belongs at x = -t_shift on a plot labelled
+    "Since First Detection".
+    """
+    t_obs = np.asarray(t_obs, float).reshape(-1)
+    t_shift = max(float(t_shift), 0.0)
+    t_obs_max = float(np.nanmax(t_obs)) if t_obs.size else 0.0
+    model_t_max = max(t_obs_max + t_shift, 0.0) + float(t_pad)
+    u = np.linspace(0.0, 1.0, max(int(n_t), 2))
+    t_model_plot = model_t_max * u * u
+    t_plot = t_model_plot - t_shift
+    return t_model_plot, t_plot, model_t_max
+
+
+def _set_since_first_detection_xlim(ax, t_obs: np.ndarray, t_plot: np.ndarray) -> None:
+    t_obs = np.asarray(t_obs, float).reshape(-1)
+    t_plot = np.asarray(t_plot, float).reshape(-1)
+    finite = np.concatenate([t_obs[np.isfinite(t_obs)], t_plot[np.isfinite(t_plot)]])
+    if finite.size == 0:
+        return
+
+    x_min = float(np.nanmin(finite))
+    x_max = float(np.nanmax(finite))
+    span = max(x_max - x_min, 1.0)
+    left_pad = max(1.0, 0.05 * span)
+    right_pad = min(10.0, max(1.0, 0.02 * span))
+
+    x_left = x_min - left_pad
+    if x_min < 0.0:
+        # Keep the model origin visible without wasting a large fraction of the
+        # axis on pre-detection empty space for long light curves.
+        origin_pad = max(1.0, min(5.0, 0.25 * abs(x_min), 0.02 * span))
+        x_left = x_min - origin_pad
+    x_right = x_max + right_pad
+    ax.set_xlim(x_left, x_right)
+
+    if x_min < 0.0:
+        negative_tick = -_nice_pre_detection_tick(
+            max(abs(x_min), 0.5 * abs(x_left))
+        )
+        min_tick_spacing = 0.08 * (x_right - x_left)
+        if x_left <= negative_tick <= x_right and abs(negative_tick) >= min_tick_spacing:
+            ticks = [
+                float(t)
+                for t in ax.get_xticks()
+                if np.isfinite(t) and x_left <= float(t) <= x_right
+            ]
+            ticks.extend([negative_tick, 0.0])
+            ticks = sorted(set(round(t, 10) for t in ticks))
+            ax.set_xticks(ticks)
+
+
+def _nice_pre_detection_tick(value: float) -> float:
+    value = max(float(value), 0.0)
+    for candidate in (1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0):
+        if value <= candidate:
+            return candidate
+    scale = 10.0 ** np.floor(np.log10(value))
+    return float(np.ceil(value / scale) * scale)
+
+
+def _anchor_model_origin_for_plot(
+    y_line: np.ndarray,
+    *,
+    y_kind: str,
+    y_reference: np.ndarray,
+    t_plot: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """
+    Plot-only anchor for the physical model origin.
+
+    Some model grids have no finite synthetic photometry exactly at t_model=0,
+    while others return a finite value that is already close to the first data.
+    The anchor is deliberately plot-only: it makes the displayed curve rise
+    from the model origin without changing the fitted model or likelihood.
+    """
+    y = np.asarray(y_line, float).copy()
+    if y.size == 0:
+        return y
+    finite_idx = np.flatnonzero(np.isfinite(y))
+    if finite_idx.size == 0:
+        return y
+
+    kind = str(y_kind).lower()
+    ref = np.asarray(y_reference, float).reshape(-1)
+    ref = ref[np.isfinite(ref)]
+    if ref.size == 0:
+        ref = y[np.isfinite(y)]
+    if ref.size == 0:
+        return y
+
+    if kind == "mag":
+        anchor = float(np.nanmax(ref) + 0.5)
+    elif kind == "flux":
+        anchor = 0.0
+    else:
+        positive = ref[ref > 0.0]
+        if positive.size:
+            anchor = float(np.nanmin(positive) * 0.5)
+        else:
+            return y
+
+    first = int(finite_idx[0])
+    ramp_end = first
+    if t_plot is not None:
+        x = np.asarray(t_plot, float).reshape(-1)
+        if x.size == y.size:
+            nonnegative_finite = np.flatnonzero((x >= 0.0) & np.isfinite(y))
+            if nonnegative_finite.size:
+                ramp_end = int(nonnegative_finite[0])
+
+    if ramp_end > 0 and np.isfinite(y[ramp_end]):
+        y[:ramp_end] = np.linspace(anchor, y[ramp_end], ramp_end + 1)[:-1]
+    else:
+        y[0] = anchor
+    return y
+
+
 # -----------------------------------------------------------------------------
 # public: corner
 # -----------------------------------------------------------------------------
@@ -422,7 +552,7 @@ def fit_bol(
     Bolometric/thermal single-curve fit plot.
     data must provide: t_days, y, yerr
     """
-    from ..api import predict_bol  # lazy import
+    from ..api import lightcurve_bol, predict_bol  # lazy import
     from ..api import _apply_data_filter  # lazy import
 
     loaded = _to_loaded(res)
@@ -460,14 +590,10 @@ def fit_bol(
         raise ValueError("summary must be 'best' or 'median'.")
     params_0, t_shift_0 = _params_and_shift_from_paramdict(loaded, p0)
 
-    # Plot from model time zero, then map to observed-time axis with t_shift.
-    # Legacy convention in fitting:
-    # y_model_shifted(t_obs) = y_model_raw(t_obs + t_shift)
-    # so x_obs = t_model - t_shift, with t_model >= 0.
     t_obs = np.asarray(data.t_days, float).reshape(-1)
-    model_t_max = max(float(np.nanmax(t_obs) + t_shift_0), 0.0) + float(t_pad)
-    t_model_plot = np.linspace(0.0, model_t_max, int(n_t))
-    t_plot = t_model_plot - t_shift_0
+    t_model_plot, t_plot, model_t_max = _model_zero_time_grid(
+        t_obs, t_shift_0, t_pad, n_t
+    )
     model_kwargs_eval = _prepare_plot_model_kwargs(model_kwargs, model_t_max)
 
     y_obs = np.asarray(data.y, float).reshape(-1)
@@ -477,14 +603,14 @@ def fit_bol(
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot(111)
 
-        y_line = predict_bol(
+        lc = lightcurve_bol(
             model=model_name,
             params=params_0,
             z=z,
-            t_days=t_model_plot,
-            interp_fill=interp_fill_model,
             **model_kwargs_eval,
         )
+        t_line = np.asarray(lc.t_days, float) - t_shift_0
+        y_line = np.asarray(lc.Lbol, float)
 
         ax.errorbar(
                 t_obs, y_obs, yerr=y_err,
@@ -500,7 +626,7 @@ def fit_bol(
                 label="data",
             )
 
-        ax.plot(t_plot, y_line, lw=lw_model, color=model_color, label=model_label)
+        ax.plot(t_line, y_line, lw=lw_model, color=model_color, label=model_label)
 
         if show_1sigma:
             rng = np.random.default_rng(123)
@@ -529,6 +655,12 @@ def fit_bol(
                         interp_fill=interp_fill_model,
                         **model_kwargs_eval,
                     )
+                yj = _anchor_model_origin_for_plot(
+                    yj,
+                    y_kind="bol",
+                    y_reference=y_obs,
+                    t_plot=t_plot,
+                )
                 ys.append(yj)
 
             ys = np.asarray(ys, float)
@@ -548,6 +680,8 @@ def fit_bol(
         ax.set_yscale("log")
         ax.set_xlabel("Since First Detection (days)")
         ax.set_ylabel("Bolometric Luminosity")
+        xlim_model = np.concatenate([t_line, t_plot]) if show_1sigma else t_line
+        _set_since_first_detection_xlim(ax, t_obs, xlim_model)
         if ylim is not None:
             ax.set_ylim(*ylim)
 
@@ -589,7 +723,7 @@ def fit_multiband(
     data must provide: t_days, band, y, yerr
     Bands are grouped exactly as they appear (case-sensitive, no normalization).
     """
-    from ..api import predict_multiband  # lazy import
+    from ..api import lightcurve_multiband, predict_multiband  # lazy import
     from ..api import _apply_data_filter  # lazy import
 
     loaded = _to_loaded(res)
@@ -629,9 +763,9 @@ def fit_multiband(
     params_0, t_shift_0 = _params_and_shift_from_paramdict(loaded, p0)
 
     t_obs = np.asarray(data.t_days, float).reshape(-1)
-    model_t_max = max(float(np.nanmax(t_obs) + t_shift_0), 0.0) + float(t_pad)
-    t_model_plot = np.linspace(0.0, model_t_max, int(n_t))
-    t_plot = t_model_plot - t_shift_0
+    t_model_plot, t_plot, model_t_max = _model_zero_time_grid(
+        t_obs, t_shift_0, t_pad, n_t
+    )
     model_kwargs_eval = _prepare_plot_model_kwargs(model_kwargs, model_t_max)
 
     y_obs = np.asarray(data.y, float).reshape(-1)
@@ -650,6 +784,21 @@ def fit_multiband(
         fixed = dict(loaded.get("fixed", {}) or {})
         pnames = [str(x) for x in loaded["param_names"]]
 
+        lc = lightcurve_multiband(
+            model=model_name,
+            params=params_0,
+            z=z,
+            distance_modulus=distance_modulus,
+            filters=filters,
+            bands=bands,
+            y_kind=y_kind,
+            mag_system=mag_system,
+            extinction=extinction,
+            sed=plot_sed,
+            **model_kwargs_eval,
+        )
+        t_line = np.asarray(lc.t_days, float) - t_shift_0
+
         for b in bands:
             c = color_map[b]
             m = (band == b)
@@ -660,23 +809,9 @@ def fit_multiband(
                 color=c, alpha=0.9, label=f"{b} data",
             )
 
-            # Keep x-axis in observed time and shift model time axis by t_shift.
-            y_line = predict_multiband(
-                model=model_name,
-                params=params_0,
-                z=z,
-                distance_modulus=distance_modulus,
-                filters=filters,
-                t_days=t_model_plot,
-                band=np.array([b] * len(t_plot), dtype=object),
-                y_kind=y_kind,
-                mag_system=mag_system,
-                extinction=extinction,
-                sed=plot_sed,
-                interp_fill=interp_fill_model,
-                **model_kwargs_eval,
-            )
-            ax.plot(t_plot, y_line, lw=lw_model, color=c, label=f"{b} {model_tag}")
+            # Keep x-axis in observed time and shift the raw model grid by t_shift.
+            y_line = np.asarray(lc.y[b], float)
+            ax.plot(t_line, y_line, lw=lw_model, color=c, label=f"{b} {model_tag}")
 
             if show_1sigma:
                 rng = np.random.default_rng(1000 + bands.index(b))
@@ -709,6 +844,12 @@ def fit_multiband(
                             interp_fill=interp_fill_model,
                             **model_kwargs_eval,
                         )
+                    yj = _anchor_model_origin_for_plot(
+                        yj,
+                        y_kind=y_kind,
+                        y_reference=y_obs[m],
+                        t_plot=t_plot,
+                    )
                     ys.append(yj)
 
                 ys = np.asarray(ys, float)
@@ -729,9 +870,8 @@ def fit_multiband(
                     ymax = float(np.nanmax(y_obs[finite]))
                     pad = 0.05 * (ymax - ymin) if ymax > ymin else max(abs(ymax) * 0.1, 1e-30)
                     ax.set_ylim(ymin - pad, ymax + pad)
-        x_min = min(float(np.nanmin(t_obs)), float(np.nanmin(t_plot)))
-        x_max = max(float(np.nanmax(t_obs)), float(np.nanmax(t_plot)))
-        ax.set_xlim(x_min - 10, x_max + 10)
+        xlim_model = np.concatenate([t_line, t_plot]) if show_1sigma else t_line
+        _set_since_first_detection_xlim(ax, t_obs, xlim_model)
         ax.set_xlabel("Since First Detection (days)")
         ax.set_ylabel(_mag_ylabel(y_kind, mag_system))
         _maybe_invert_mag_axis(ax, y_kind)

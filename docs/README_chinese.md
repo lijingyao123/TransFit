@@ -387,8 +387,8 @@ loaded = tf.load(path)
 
 ## 引用
 
-如果你在科研工作中使用 TransFit，请查看
-[模型引用指南](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md)。
+如果你在科研工作中使用 TransFit，请引用 TransFit 论文。
+模型引用规则和 BibTeX 见 [模型引用指南](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md)。
 
 ## AI 辅助声明
 

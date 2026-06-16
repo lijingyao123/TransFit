@@ -301,6 +301,58 @@ def test_t_shift_prior_is_non_negative():
         )
 
 
+def test_fixed_model_params_are_not_limited_by_default_sampling_bounds(monkeypatch):
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        assert list(prior.param_names) == []
+        sample = np.empty((1, 0), dtype=float)
+        return sample, np.array([0.0], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    data = tf.MultiBandData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        band=np.array(["B", "B", "B"], dtype=object),
+        y=np.array([20.0, 20.1, 20.2], float),
+        yerr=np.array([0.2, 0.2, 0.2], float),
+    )
+    fixed = dict(PARAMS_NI)
+    fixed["E_Th_in"] = 0.0
+    fixed["t_shift"] = 0.0
+
+    res = tf.fit_multiband(
+        data=data,
+        model="nickel",
+        z=0.001728,
+        distance_modulus=MU_7P5_MPC,
+        filters={"B": "johnson_cousins.B"},
+        y_kind="mag",
+        fixed=fixed,
+        model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 8.0},
+    )
+
+    assert res.sampler == "fake"
+    assert res.fixed["E_Th_in"] == pytest.approx(0.0)
+    assert res.param_names == []
+
+
+def test_fixed_model_params_still_obey_physical_constraints():
+    data = tf.BolometricData(
+        t_days=np.array([1.0, 2.0, 3.0], float),
+        y=np.array([1.0e41, 1.1e41, 1.0e41], float),
+        yerr=np.array([1.0e40, 1.0e40, 1.0e40], float),
+    )
+    fixed = _fixed_bol_params()
+    fixed["E_Th_in"] = -1.0
+
+    with pytest.raises(ValueError, match="E_Th_in must be >= 0"):
+        tf.fit_bol(
+            data=data,
+            model="nickel",
+            fixed=fixed,
+            model_kwargs={"Nx": 20, "Ny": 50, "t_max_days": 5.0},
+        )
+
+
 def test_fit_bol_rejects_unmasked_bad_luminosity_values():
     for y in (
         np.array([np.nan, 1.1e41], float),
@@ -968,11 +1020,19 @@ def test_plot_fit_multiband_reuses_saved_cutoff_sed(monkeypatch):
 
     seen = {}
 
-    def fake_predict_multiband(**kwargs):
+    def fake_lightcurve_multiband(**kwargs):
         seen["sed"] = kwargs.get("sed")
-        return np.zeros_like(np.asarray(kwargs["t_days"], float))
+        return type(
+            "LC",
+            (),
+            {
+                "t_days": np.array([0.5, 1.0, 1.5], float),
+                "bands": ["B"],
+                "y": {"B": np.zeros(3, float)},
+            },
+        )()
 
-    monkeypatch.setattr(api, "predict_multiband", fake_predict_multiband)
+    monkeypatch.setattr(api, "lightcurve_multiband", fake_lightcurve_multiband)
 
     fig = tf.plot.fit_multiband(res, data, n_t=5)
     assert fig is not None
@@ -980,6 +1040,113 @@ def test_plot_fit_multiband_reuses_saved_cutoff_sed(monkeypatch):
     assert seen["sed"].cutoff_wavelength_A == pytest.approx(2500.0)
     assert seen["sed"].uv_slope == pytest.approx(3.0)
     assert seen["sed"].min_factor == pytest.approx(0.2)
+
+
+def test_plot_fit_multiband_starts_model_at_negative_t_shift(monkeypatch):
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        assert list(prior.param_names) == []
+        sample = np.empty(0, dtype=float)
+        logp = lnprob(sample)
+        assert np.isfinite(logp)
+        return sample.reshape(1, 0), np.array([logp], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    data = tf.MultiBandData(
+        t_days=np.array([0.0, 2.0, 5.0], float),
+        band=np.array(["B", "B", "B"], dtype=object),
+        y=np.array([20.0, 19.5, 19.0], float),
+        yerr=np.array([0.2, 0.2, 0.2], float),
+    )
+    fixed = dict(PARAMS_NI)
+    fixed["t_shift"] = 4.0
+
+    res = tf.fit_multiband(
+        data=data,
+        model="nickel",
+        z=0.001728,
+        distance_modulus=MU_7P5_MPC,
+        filters={"B": "johnson_cousins.B"},
+        y_kind="mag",
+        fixed=fixed,
+        model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 12.0},
+    )
+
+    raw_t = np.array([0.5, 1.0, 2.0, 3.0], float)
+    raw_y = np.array([21.0, 20.0, 19.0, 18.5], float)
+
+    def fake_lightcurve_multiband(**kwargs):
+        assert kwargs["bands"] == ["B"]
+        return type(
+            "LC",
+            (),
+            {"t_days": raw_t, "bands": ["B"], "y": {"B": raw_y}},
+        )()
+
+    monkeypatch.setattr(api, "lightcurve_multiband", fake_lightcurve_multiband)
+
+    fig = tf.plot.fit_multiband(res, data, n_t=6, t_pad=1.0)
+    ax = fig.axes[0]
+    model_line = next(line for line in ax.lines if line.get_label() == "B best")
+
+    assert np.asarray(model_line.get_xdata(), float).tolist() == pytest.approx((raw_t - 4.0).tolist())
+    assert np.asarray(model_line.get_ydata(), float).tolist() == pytest.approx(raw_y.tolist())
+    assert ax.get_xlim()[0] < raw_t[0] - 4.0
+    assert np.any(np.isclose(np.asarray(ax.get_xticks(), float), 0.0))
+
+
+def test_plot_fit_bol_starts_model_at_negative_t_shift(monkeypatch):
+    def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
+        assert list(prior.param_names) == []
+        sample = np.empty(0, dtype=float)
+        logp = lnprob(sample)
+        assert np.isfinite(logp)
+        return sample.reshape(1, 0), np.array([logp], float), {}, "fake"
+
+    monkeypatch.setattr(api, "_run_sampler", fake_run_sampler)
+
+    data = tf.BolometricData(
+        t_days=np.array([0.0, 2.0, 5.0], float),
+        y=np.array([1.0e41, 1.2e41, 1.1e41], float),
+        yerr=np.array([1.0e40, 1.0e40, 1.0e40], float),
+    )
+    fixed = dict(PARAMS_NI)
+    fixed.pop("T_floor")
+    fixed["t_shift"] = 3.5
+
+    res = tf.fit_bol(
+        data=data,
+        model="nickel",
+        z=0.001728,
+        fixed=fixed,
+        model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 12.0},
+    )
+
+    raw_t = np.array([0.25, 0.75, 1.5, 3.0], float)
+    raw_l = np.array([0.8e41, 0.9e41, 1.0e41, 1.2e41], float)
+
+    def fake_lightcurve_bol(**kwargs):
+        return type(
+            "LC",
+            (),
+            {
+                "t_days": raw_t,
+                "Lbol": raw_l,
+                "Teff": np.ones_like(raw_t),
+                "Rph": np.ones_like(raw_t),
+            },
+        )()
+
+    monkeypatch.setattr(api, "lightcurve_bol", fake_lightcurve_bol)
+
+    fig = tf.plot.fit_bol(res, data, n_t=6, t_pad=1.0)
+    ax = fig.axes[0]
+    model_line = next(line for line in ax.lines if line.get_label() == "best-fit model")
+
+    assert np.asarray(model_line.get_xdata(), float).tolist() == pytest.approx((raw_t - 3.5).tolist())
+    assert np.asarray(model_line.get_ydata(), float).tolist() == pytest.approx(raw_l.tolist())
+    assert ax.get_xlim()[0] < raw_t[0] - 3.5
+    assert np.any(np.isclose(np.asarray(ax.get_xticks(), float), 0.0))
 
 
 def test_observation_likelihood_dispatch_is_explicit():

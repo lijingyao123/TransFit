@@ -816,10 +816,6 @@ def _split_sampling(
         lo = float(lo)
         hi = float(hi)
         if n in fixed:
-            v = float(fixed[n])
-            # allow boundary values for fixed params
-            if not (lo <= v <= hi):
-                raise ValueError(f"fixed['{n}']={v} out of bounds ({lo}, {hi})")
             continue
         names_samp.append(n)
         bounds_samp.append([lo, hi])
