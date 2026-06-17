@@ -16,7 +16,7 @@
 
 ## 1. Background and Problems
 
-The current multi-band implementation in [transfit/api.py](C:/Users/zyh/Desktop/TransFit/transfit/api.py), [transfit/modules/sed/blackbody.py](C:/Users/zyh/Desktop/TransFit/transfit/modules/sed/blackbody.py), [transfit/modules/io.py](C:/Users/zyh/Desktop/TransFit/transfit/modules/io.py), and [transfit/modules/plot.py](C:/Users/zyh/Desktop/TransFit/transfit/modules/plot.py) works for a simple AB-magnitude workflow, but it has four structural limitations:
+The current multi-band implementation in [transfit/api.py](../transfit/api.py), [transfit/modules/sed/blackbody.py](../transfit/modules/sed/blackbody.py), [transfit/modules/io.py](../transfit/modules/io.py), and [transfit/modules/plot.py](../transfit/modules/plot.py) works for a simple AB-magnitude workflow, but it has four structural limitations:
 
 1. `filters` only means `band -> nu_eff`, which is not rich enough for Vega support or future bandpass integration.
 2. Distance is effectively tied to `z` at the public API level, which is not acceptable for nearby sources with independent distance measurements.
