@@ -406,9 +406,11 @@ For questions about this project, please contact:
 
 ## Citation
 
-If you use TransFit in research, please cite the TransFit paper:
-
 If TransFit is helpful for your work, please consider giving the repository a star. This helps other researchers discover the project.
+
+[![GitHub stars](https://img.shields.io/github/stars/YuHaoZhang01/TransFit?style=social&label=Stars)](https://github.com/YuHaoZhang01/TransFit/stargazers)
+
+If you use TransFit in research, please cite the TransFit paper:
 
 ```bibtex
 @ARTICLE{2025ApJ...992...20L,

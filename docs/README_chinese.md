@@ -405,8 +405,11 @@ loaded = tf.load(path)
 
 ## 引用
 
-如果你在科研工作中使用 TransFit，请引用 TransFit 论文。
 如果您觉得 TransFit 对您的工作有帮助，请考虑给我们打一个星，这可以帮助其他人发现这个项目。
+
+[![GitHub stars](https://img.shields.io/github/stars/YuHaoZhang01/TransFit?style=social&label=Stars)](https://github.com/YuHaoZhang01/TransFit/stargazers)
+
+如果你在科研工作中使用 TransFit，请引用 TransFit 论文。
 模型引用规则和 BibTeX 见 [模型引用指南](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md)。
 
 ## 使用 TransFit 的论文
