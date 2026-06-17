@@ -1555,7 +1555,7 @@ def test_explicit_distance_and_extinction_roundtrip(tmp_path):
             model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 8.0},
         )
 
-    path = tmp_path / "fit_multiband_redesign.npz"
+    path = tmp_path / "fit_multiband_photometry.npz"
     saved = tf.save(res, path=path)
     loaded = tf.load(saved)
 
