@@ -390,6 +390,11 @@ loaded = tf.load(path)
 如果你在科研工作中使用 TransFit，请引用 TransFit 论文。
 模型引用规则和 BibTeX 见 [模型引用指南](https://github.com/YuHaoZhang01/TransFit/blob/main/docs/model_citations.md)。
 
+## 使用 TransFit 的论文
+
+- Yuan et al., *Thermal X-rays breaking out from pre-explosion ejecta of a dying massive star*, arXiv e-print (2026), [arXiv:2606.10014](https://arxiv.org/abs/2606.10014)。
+- Liu et al., *SN 2024igg: A Super-Chandrasekhar/03fg-like SN exhibiting C II-dominated spectra after explosion*, submitted to A&A (2026), [arXiv:2602.03427](https://arxiv.org/abs/2602.03427)。
+
 ## AI 辅助声明
 
 本项目中的部分代码和文档是在 OpenAI Codex 辅助下生成的。
