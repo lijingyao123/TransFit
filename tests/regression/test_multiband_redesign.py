@@ -17,7 +17,12 @@ from transfit.modules.extinction import (
     normalize_extinction,
     resolve_extinction_values_mag,
 )
-from transfit.modules.filters import normalize_filters
+from transfit.modules.filters import (
+    filters_from_dict,
+    filters_to_dict,
+    mono_effective_wavelength_A,
+    normalize_filters,
+)
 from transfit.modules.fnu import evaluate_multiband_model_fnu
 from transfit.modules.io import _validate_ctx_dict
 from transfit.modules.likelihood import (
@@ -1341,6 +1346,68 @@ def test_fit_rejects_misspelled_sigma_int_prior():
             fixed=fixed,
             model_kwargs={"Nx": 20, "Ny": 60, "t_max_days": 8.0},
         )
+
+
+def test_custom_filter_accepts_effective_wavelength_in_angstrom():
+    filters = normalize_filters({"custom_g": {"lambda_eff_A": 4770.0}})
+
+    profile = filters["custom_g"]
+    assert profile.filter_id == "user:custom_g"
+    assert profile.source == "user"
+    assert profile.kind == "mono"
+    assert profile.nu_eff_hz == pytest.approx(C_LIGHT / (4770.0e-8))
+    assert mono_effective_wavelength_A(profile) == pytest.approx(4770.0)
+    assert profile.meta["lambda_eff_A"] == pytest.approx(4770.0)
+
+
+def test_custom_filter_accepts_effective_wavelength_unit_aliases():
+    filters = normalize_filters(
+        {
+            "r_nm": {"lambda_eff_nm": 623.1},
+            "i_um": {"lambda_eff_um": 0.7625},
+        }
+    )
+
+    assert mono_effective_wavelength_A(filters["r_nm"]) == pytest.approx(6231.0)
+    assert mono_effective_wavelength_A(filters["i_um"]) == pytest.approx(7625.0)
+
+
+def test_custom_filter_keeps_vega_zero_point_and_filter_id():
+    filters = normalize_filters(
+        {
+            "B": {
+                "filter_id": "user:B_eff",
+                "lambda_eff_A": 4400.0,
+                "vega_zero_point_jy": 4260.0,
+            },
+        },
+        mag_system="vega",
+    )
+
+    profile = filters["B"]
+    assert profile.filter_id == "user:B_eff"
+    assert profile.zero_points_jy["vega"] == pytest.approx(4260.0)
+
+
+def test_custom_filter_effective_wavelength_roundtrips_through_serialization():
+    filters = normalize_filters({"custom": {"lambda_eff_A": 5000.0}})
+    payload = filters_to_dict(filters)
+
+    assert payload["custom"]["lambda_eff_A"] == pytest.approx(5000.0)
+    assert payload["custom"]["nu_eff_hz"] == pytest.approx(C_LIGHT / (5000.0e-8))
+
+    restored = filters_from_dict(payload)
+    assert mono_effective_wavelength_A(restored["custom"]) == pytest.approx(5000.0)
+
+
+def test_custom_filter_rejects_ambiguous_effective_wavelength_keys():
+    with pytest.raises(ValueError, match="Specify only one effective wavelength key"):
+        normalize_filters({"custom": {"lambda_eff_A": 5000.0, "lambda_eff_nm": 500.0}})
+
+
+def test_custom_filter_rejects_preset_mixed_with_effective_wavelength():
+    with pytest.raises(ValueError, match="preset cannot be combined"):
+        normalize_filters({"custom": {"preset": "johnson_cousins.V", "lambda_eff_A": 5500.0}})
 
 
 def test_structured_extinction_component_resolves_standard_av():

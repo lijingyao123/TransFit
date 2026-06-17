@@ -108,6 +108,23 @@ def test_forward_multiband_light_curve_is_finite():
     assert np.all(np.isfinite(lc.y["V"]))
 
 
+def test_custom_effective_wavelength_filter_is_public():
+    lc = tf.lightcurve_multiband(
+        model="nickel",
+        params=PARAMS_NICKEL,
+        z=0.001728,
+        filters={"custom_g": {"lambda_eff_A": 4770.0}},
+        bands=["custom_g"],
+        y_kind="mag",
+        mag_system="ab",
+        t_max_days=20.0,
+        solver_kwargs={"Nx": 20, "Ny": 80},
+    )
+
+    assert lc.bands == ["custom_g"]
+    assert np.all(np.isfinite(lc.y["custom_g"]))
+
+
 def test_fit_bol_and_save_load_smoke(monkeypatch, tmp_path):
     def fake_run_sampler(*, sampler, lnprob, prior, sampler_kwargs):
         assert sampler == "emcee"

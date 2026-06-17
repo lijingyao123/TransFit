@@ -277,12 +277,13 @@ Meaning:
 
 #### C. Explicit custom filter definition
 
-Mono-frequency custom filter:
+Mono-frequency custom filter. User-facing examples should prefer effective
+wavelength; the code converts it to `nu_eff_hz` internally:
 
 ```python
 filters = {
     "B": {
-        "nu_eff_hz": 6.8e14,
+        "lambda_eff_A": 4400.0,
         "vega_zero_point_jy": 4260.0,
     }
 }
@@ -322,7 +323,7 @@ Each built-in entry should store:
 
 - `filter_id`
 - `kind`
-- `nu_eff_hz` or bandpass arrays
+- `nu_eff_hz` and `lambda_eff_A` for mono filters, or bandpass arrays
 - `zero_points_jy`
 - `meta.reference`
 - `meta.version`
@@ -509,7 +510,7 @@ Validation must be strict and explicit.
 ### 10.1 Filter validation
 
 - all used bands must exist in the normalized filter map
-- mono filters require a positive finite `nu_eff_hz`
+- mono filters require a positive finite effective wavelength or `nu_eff_hz`
 - bandpass filters require:
   - 1D finite wavelength array
   - 1D finite throughput array

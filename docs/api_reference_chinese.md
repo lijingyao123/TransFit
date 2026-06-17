@@ -172,6 +172,39 @@ tf.lightcurve_multiband(
 - `bands`
 - `y[band]`
 
+### 滤波器定义
+
+`filters` 会把 `MultiBandData.band` 中的 band 标签映射到物理滤波器定义。
+内置滤波器使用字符串 ID：
+
+```python
+filters = {
+    "B": "johnson_cousins.B",
+    "V": "johnson_cousins.V",
+}
+```
+
+自定义单点滤波器推荐使用有效波长作为公开输入：
+
+```python
+filters = {
+    "g": {"lambda_eff_A": 4770.0},
+    "r": {"lambda_eff_nm": 623.1},
+    "i": {"lambda_eff_um": 0.7625},
+}
+```
+
+如果 `mag_system="vega"` 使用自定义滤波器，需要同时提供 Vega 零点：
+
+```python
+filters = {
+    "B": {"lambda_eff_A": 4400.0, "vega_zero_point_jy": 4260.0},
+}
+```
+
+`nu_eff_hz` 仍然保留兼容，但新的用户示例应优先使用 `lambda_eff_A`。完整
+bandpass throughput 积分暂未实现。
+
 `predict_bol` 和 `predict_multiband` 用于在用户给定的 observer-frame
 时间点上计算模型值。`interp_fill` 可取 `"nan"`、`"raise"` 或 `"edge"`。
 拟合接口中禁止 `"edge"`，避免在模型时间范围外静默使用边界值。

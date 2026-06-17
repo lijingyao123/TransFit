@@ -134,6 +134,24 @@ plt.legend()
 plt.show()
 ```
 
+`filters` 会把数据中的 band 标签映射到具体滤波器定义。内置滤波器使用字符串
+ID；自定义单点滤波器推荐使用有效波长：
+
+```python
+filters = {
+    "g": {"lambda_eff_A": 4770.0},
+    "r": {"lambda_eff_nm": 623.1},
+}
+```
+
+如果自定义 Vega 星等滤波器，还需要给 Vega 零点：
+
+```python
+filters = {
+    "B": {"lambda_eff_A": 4400.0, "vega_zero_point_jy": 4260.0},
+}
+```
+
 <p align="center">
   <img src="lightcurve_multiband.png" alt="Multi-band forward model example">
 </p>

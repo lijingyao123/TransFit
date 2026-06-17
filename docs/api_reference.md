@@ -184,6 +184,40 @@ Returns `MultiBandLC` with:
 - `bands`
 - `y[band]`
 
+### Filter Definitions
+
+`filters` maps the band labels in `MultiBandData.band` to physical filter
+definitions. Built-in filters use string IDs:
+
+```python
+filters = {
+    "B": "johnson_cousins.B",
+    "V": "johnson_cousins.V",
+}
+```
+
+Custom mono filters should use effective wavelength as the public input:
+
+```python
+filters = {
+    "g": {"lambda_eff_A": 4770.0},
+    "r": {"lambda_eff_nm": 623.1},
+    "i": {"lambda_eff_um": 0.7625},
+}
+```
+
+If `mag_system="vega"` is used with a custom filter, provide a Vega zero point:
+
+```python
+filters = {
+    "B": {"lambda_eff_A": 4400.0, "vega_zero_point_jy": 4260.0},
+}
+```
+
+`nu_eff_hz` remains accepted for backward compatibility, but new user-facing
+examples should prefer `lambda_eff_A`. Full bandpass throughput integration is
+not implemented yet.
+
 `predict_bol` and `predict_multiband` evaluate the same models at
 user-supplied observer-frame times. `interp_fill` may be `"nan"`, `"raise"`,
 or `"edge"` for prediction calls. During fitting, `"edge"` is rejected to avoid

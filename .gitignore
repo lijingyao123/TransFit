@@ -13,6 +13,7 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .jupyter_runtime/
+.codex_tmp/
 .coverage
 htmlcov/
 build/
@@ -26,6 +27,7 @@ dist/
 Log/
 MCMC_out/
 mcmc_out/
+results/
 *.npz
 *.h5
 *.log

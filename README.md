@@ -137,6 +137,24 @@ plt.legend()
 plt.show()
 ```
 
+`filters` maps the band labels in your data to filter definitions. Built-in
+filters use string IDs. Custom mono filters should use an effective wavelength:
+
+```python
+filters = {
+    "g": {"lambda_eff_A": 4770.0},
+    "r": {"lambda_eff_nm": 623.1},
+}
+```
+
+For custom Vega magnitudes, also provide a Vega zero point:
+
+```python
+filters = {
+    "B": {"lambda_eff_A": 4400.0, "vega_zero_point_jy": 4260.0},
+}
+```
+
 <p align="center">
   <img src="docs/lightcurve_multiband.png" alt="Multi-band forward model example">
 </p>
@@ -395,14 +413,19 @@ If you use TransFit in research, please cite the TransFit paper:
        author = {{Liu}, Liang-Duan and {Zhang}, Yu-Hao and {Yu}, Yun-Wei and {Du}, Ze-Xin and {Li}, Jing-Yao and {Wu}, Guang-Lei and {Dai}, Zi-Gao},
         title = "{TransFit: An Efficient Framework for Transient Light-curve Fitting with Time-dependent Radiative Diffusion}",
       journal = {\apj},
+     keywords = {Supernovae, Radiative transfer, Core-collapse supernovae, Time domain astronomy, 1668, 1335, 304, 2109, High Energy Astrophysical Phenomena, Instrumentation and Methods for Astrophysics},
          year = 2025,
+        month = oct,
        volume = {992},
        number = {1},
           eid = {20},
         pages = {20},
           doi = {10.3847/1538-4357/adfed6},
 archivePrefix = {arXiv},
-       eprint = {2505.13825}
+       eprint = {2505.13825},
+ primaryClass = {astro-ph.HE},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2025ApJ...992...20L},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
 }
 ```
 

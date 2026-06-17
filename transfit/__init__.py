@@ -1,5 +1,7 @@
 from importlib import import_module
 
+__version__ = "0.1.0"
+
 from .api import (
     BolometricLC, MultiBandLC,
     BolometricData, MultiBandData,
@@ -25,5 +27,6 @@ __all__ = [
     "predict_bol", "predict_multiband",
     "fit_bol", "fit_multiband",
     "save", "load", "default_outpath",
+    "__version__",
     "plot",
 ]

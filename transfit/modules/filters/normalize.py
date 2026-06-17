@@ -12,6 +12,18 @@ from .core import FilterProfile
 from .registry import get_builtin_filter
 
 
+_LAMBDA_EFF_FACTORS_A = {
+    "lambda_eff_A": 1.0,
+    "wavelength_eff_A": 1.0,
+    "lambda_eff_nm": 10.0,
+    "wavelength_eff_nm": 10.0,
+    "lambda_eff_um": 1.0e4,
+    "lambda_eff_micron": 1.0e4,
+    "wavelength_eff_um": 1.0e4,
+    "wavelength_eff_micron": 1.0e4,
+}
+
+
 def _coerce_zero_points(spec: Mapping[str, object]) -> Dict[str, float]:
     out: Dict[str, float] = {}
     if "zero_points_jy" in spec:
@@ -23,6 +35,26 @@ def _coerce_zero_points(spec: Mapping[str, object]) -> Dict[str, float]:
     if "vega_zero_point_jy" in spec:
         out["vega"] = float(spec["vega_zero_point_jy"])
     return out
+
+
+def _coerce_lambda_eff_A(spec: Mapping[str, object]) -> Optional[float]:
+    found = [key for key in _LAMBDA_EFF_FACTORS_A if key in spec]
+    if not found:
+        return None
+    if len(found) > 1:
+        raise ValueError(
+            "Specify only one effective wavelength key. "
+            f"Got: {found}"
+        )
+    key = found[0]
+    lambda_eff_A = float(spec[key]) * _LAMBDA_EFF_FACTORS_A[key]
+    if not np.isfinite(lambda_eff_A) or lambda_eff_A <= 0.0:
+        raise ValueError(f"{key} must be positive and finite.")
+    return lambda_eff_A
+
+
+def _nu_eff_hz_from_lambda_eff_A(lambda_eff_A: float) -> float:
+    return C_LIGHT / (float(lambda_eff_A) * 1.0e-8)
 
 
 def _normalize_one(label: str, spec: object) -> FilterProfile:
@@ -57,10 +89,17 @@ def _normalize_one(label: str, spec: object) -> FilterProfile:
     if not isinstance(spec, Mapping):
         raise TypeError(
             f"Unsupported filter spec for band {label!r}: {type(spec).__name__}. "
-            "Use a float, preset id string, or mapping."
+            "Use a preset id string, mapping with lambda_eff_A, or mapping with nu_eff_hz. "
+            "Scalar frequencies are accepted for legacy compatibility."
         )
 
-    if any(k in spec for k in ("filter_id", "id", "preset")):
+    lambda_eff_A = _coerce_lambda_eff_A(spec)
+    has_custom_mono = lambda_eff_A is not None or "nu_eff_hz" in spec or "nu_eff" in spec
+    has_bandpass = "wavelength_A" in spec or "throughput" in spec
+    if "preset" in spec and (has_custom_mono or has_bandpass):
+        raise ValueError("preset cannot be combined with custom filter definitions.")
+
+    if any(k in spec for k in ("filter_id", "id", "preset")) and not has_custom_mono and not has_bandpass:
         filter_id = spec.get("filter_id", spec.get("id", spec.get("preset")))
         prof = get_builtin_filter(label=label, filter_id=str(filter_id))
         zero_points_jy = dict(prof.zero_points_jy)
@@ -80,10 +119,24 @@ def _normalize_one(label: str, spec: object) -> FilterProfile:
             meta=meta,
         )
 
+    if lambda_eff_A is not None:
+        meta = dict(spec.get("meta", {}) or {})
+        meta.setdefault("lambda_eff_A", lambda_eff_A)
+        return FilterProfile(
+            label=label,
+            filter_id=str(spec.get("filter_id", spec.get("id", f"user:{label}"))),
+            kind="mono",
+            source="user",
+            detector=str(spec.get("detector", "energy")),
+            nu_eff_hz=_nu_eff_hz_from_lambda_eff_A(lambda_eff_A),
+            zero_points_jy=_coerce_zero_points(spec),
+            meta=meta,
+        )
+
     if "nu_eff_hz" in spec or "nu_eff" in spec:
         return FilterProfile(
             label=label,
-            filter_id=str(spec.get("filter_id", f"user:{label}")),
+            filter_id=str(spec.get("filter_id", spec.get("id", f"user:{label}"))),
             kind="mono",
             source="user",
             detector=str(spec.get("detector", "energy")),
@@ -100,7 +153,8 @@ def _normalize_one(label: str, spec: object) -> FilterProfile:
 
     raise ValueError(
         f"Could not interpret filter spec for band {label!r}. "
-        "Use a float, preset id string, or mapping with nu_eff_hz."
+        "Use a preset id string, mapping with lambda_eff_A, or mapping with nu_eff_hz. "
+        "Scalar frequencies are accepted for legacy compatibility."
     )
 
 
