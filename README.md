@@ -408,6 +408,8 @@ For questions about this project, please contact:
 
 If you use TransFit in research, please cite the TransFit paper:
 
+If TransFit is helpful for your work, please consider giving the repository a star. This helps other researchers discover the project.
+
 ```bibtex
 @ARTICLE{2025ApJ...992...20L,
        author = {{Liu}, Liang-Duan and {Zhang}, Yu-Hao and {Yu}, Yun-Wei and {Du}, Ze-Xin and {Li}, Jing-Yao and {Wu}, Guang-Lei and {Dai}, Zi-Gao},
