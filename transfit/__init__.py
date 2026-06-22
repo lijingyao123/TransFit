@@ -15,7 +15,7 @@ from .modules.io import save, load, default_outpath
 
 def __getattr__(name):
     if name == "plot":
-        # Plotting stays optional until the user actually asks for it.
+        # Keep plotting optional until the user explicitly requests it.
         return import_module(".modules.plot", __name__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
